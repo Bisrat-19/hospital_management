@@ -2,11 +2,14 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import permissions, status
 from django.shortcuts import get_object_or_404
-from ..models import User
-from ..serializers import UserSerializer, RegisterSerializer
+from django.contrib.auth import authenticate
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from .models import User
+from .serializers import UserSerializer, RegisterSerializer
 
 
-
+# Admin views
 @api_view(['GET'])
 @permission_classes([permissions.IsAdminUser])
 def list_users_view(request):
@@ -48,3 +51,41 @@ def delete_user_view(request, pk):
     user = get_object_or_404(User, pk=pk)
     user.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# Auth views
+@api_view(['POST'])
+@permission_classes([permissions.IsAdminUser])
+def register_view(request):
+    serializer = RegisterSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.save()
+        return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def login_view(request):
+    username = request.data.get('username')
+    password = request.data.get('password')
+
+    user = authenticate(username=username, password=password)
+    if user is not None and user.is_active:
+        refresh = RefreshToken.for_user(user)
+        data = {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'user': UserSerializer(user).data
+        }
+        return Response(data)
+    return Response({'detail': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+# Profile views
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def profile_view(request):
+    user = request.user
+    serializer = UserSerializer(user)
+    return Response(serializer.data)

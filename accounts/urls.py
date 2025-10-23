@@ -1,7 +1,8 @@
 from django.urls import path
-from .views.auth_views import login_view, register_view
-from .views.profile_views import profile_view
-from .views.admin_views import (
+from .views import (
+    login_view,
+    register_view,
+    profile_view,
     list_users_view,
     get_user_view,
     update_user_view,
