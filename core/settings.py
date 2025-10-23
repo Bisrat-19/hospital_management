@@ -40,6 +40,7 @@ INSTALLED_APPS = [
 
     # third-party
     'rest_framework',
+    'drf_spectacular',
 
     # my apps
     'accounts',
@@ -135,6 +136,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 SIMPLE_JWT = {
@@ -142,4 +144,13 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # refresh token valid for 7 days
     'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': True,
+}
+
+# drf-spectacular settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Hospital Management API',
+    'DESCRIPTION': 'OpenAPI schema for Hospital Management project',
+    'VERSION': '1.0.0',
+    # Optional: where to serve the schema
+    'SERVE_INCLUDE_SCHEMA': False,
 }
