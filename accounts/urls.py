@@ -1,22 +1,12 @@
-from django.urls import path
-from .views import (
-    login_view,
-    register_view,
-    profile_view,
-    list_users_view,
-    get_user_view,
-    update_user_view,
-    delete_user_view,
-)
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import AuthViewSet, UserAdminViewSet
+
+router = DefaultRouter()
+
+router.register(r'users', UserAdminViewSet, basename='user')
+router.register(r'auth', AuthViewSet, basename='auth')
 
 urlpatterns = [
-    path('register/', register_view, name='register'),
-    path('login/', login_view, name='login'),
-    path('profile/', profile_view, name='profile'),
-
-    # admin user endpoints
-    path('users/', list_users_view, name='list_users'),
-    path('users/<int:pk>/', get_user_view, name='get_user'),
-    path('users/<int:pk>/update/', update_user_view, name='update_user'),
-    path('users/<int:pk>/delete/', delete_user_view, name='delete_user'),
+    path('', include(router.urls)),
 ]

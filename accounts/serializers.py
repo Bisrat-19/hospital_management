@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import User
 from django.contrib.auth import authenticate
+from rest_framework_simplejwt.tokens import RefreshToken
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -25,6 +26,21 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
         return user
 
+    def update(self, instance, validated_data):
+        # Handle password separately so it is hashed via set_password
+        password = validated_data.pop('password', None)
+
+        # Update other fields normally
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        if password:
+            instance.set_password(password)
+            instance.save()
+
+        return instance
+
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
@@ -32,5 +48,22 @@ class LoginSerializer(serializers.Serializer):
     def validate(self, data):
         user = authenticate(username=data['username'], password=data['password'])
         if user and user.is_active:
-            return user
+            # store user for later use
+            self.user = user
+            # create tokens and store them
+            refresh = RefreshToken.for_user(user)
+            self.tokens = {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }
+            return {'user': user}
         raise serializers.ValidationError("Invalid credentials")
+
+    def get_token_data(self):
+        # Return token data plus serialized user
+        user_data = UserSerializer(self.user).data if hasattr(self, 'user') else None
+        return {
+            'refresh': self.tokens.get('refresh') if hasattr(self, 'tokens') else None,
+            'access': self.tokens.get('access') if hasattr(self, 'tokens') else None,
+            'user': user_data,
+        }

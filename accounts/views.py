@@ -1,91 +1,63 @@
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
-from rest_framework import permissions, status
+from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
-from django.contrib.auth import authenticate
-from rest_framework_simplejwt.tokens import RefreshToken
+from .serializers import UserSerializer, RegisterSerializer, LoginSerializer
 
 from .models import User
 from .serializers import UserSerializer, RegisterSerializer
 
 
-# Admin views
-@api_view(['GET'])
-@permission_classes([permissions.IsAdminUser])
-def list_users_view(request):
-    users = User.objects.all()
-    serializer = UserSerializer(users, many=True)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+class UserAdminViewSet(viewsets.ViewSet):
+    """Admin-only viewset for managing users: list, retrieve, update, destroy."""
+    permission_classes = [permissions.IsAdminUser]
+
+    def list(self, request):
+        users = User.objects.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def retrieve(self, request, pk=None):
+        user = get_object_or_404(User, pk=pk)
+        serializer = UserSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def update(self, request, pk=None):
+        user = get_object_or_404(User, pk=pk)
+        serializer = RegisterSerializer(instance=user, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def destroy(self, request, pk=None):
+        user = get_object_or_404(User, pk=pk)
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-@api_view(['GET'])
-@permission_classes([permissions.IsAdminUser])
-def get_user_view(request, pk):
-    user = get_object_or_404(User, pk=pk)
-    serializer = UserSerializer(user)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+class AuthViewSet(viewsets.ViewSet):
+    """Authentication-related actions: register (admin-only), login (public), profile (authenticated)."""
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAdminUser])
+    def register(self, request):
+        serializer = RegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny])
+    def login(self, request):
+        serializer = LoginSerializer(data=request.data)
+        if serializer.is_valid():
+            token_data = serializer.get_token_data()
+            return Response(token_data)
+        return Response(serializer.errors, status=status.HTTP_401_UNAUTHORIZED)
 
-@api_view(['PUT'])
-@permission_classes([permissions.IsAdminUser])
-def update_user_view(request, pk):
-    user = get_object_or_404(User, pk=pk)
-    serializer = RegisterSerializer(instance=user, data=request.data, partial=True)  # partial=True allows partial updates
-
-    if serializer.is_valid():
-        serializer.save()  # Save non-password fields
-
-        # Handle password separately
-        if 'password' in request.data:
-            user.set_password(request.data['password'])  # Hash password
-            user.save()
-
-        return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
-    
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['DELETE'])
-@permission_classes([permissions.IsAdminUser])
-def delete_user_view(request, pk):
-    user = get_object_or_404(User, pk=pk)
-    user.delete()
-    return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-# Auth views
-@api_view(['POST'])
-@permission_classes([permissions.IsAdminUser])
-def register_view(request):
-    serializer = RegisterSerializer(data=request.data)
-    if serializer.is_valid():
-        user = serializer.save()
-        return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['POST'])
-@permission_classes([permissions.AllowAny])
-def login_view(request):
-    username = request.data.get('username')
-    password = request.data.get('password')
-
-    user = authenticate(username=username, password=password)
-    if user is not None and user.is_active:
-        refresh = RefreshToken.for_user(user)
-        data = {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'user': UserSerializer(user).data
-        }
-        return Response(data)
-    return Response({'detail': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
-
-
-# Profile views
-@api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
-def profile_view(request):
-    user = request.user
-    serializer = UserSerializer(user)
-    return Response(serializer.data)
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def profile(self, request):
+        user = request.user
+        serializer = UserSerializer(user)
+        return Response(serializer.data)
