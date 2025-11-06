@@ -9,7 +9,6 @@ from .serializers import UserSerializer, RegisterSerializer
 
 
 class UserAdminViewSet(viewsets.ViewSet):
-    """Admin-only viewset for managing users: list, retrieve, update, destroy."""
     permission_classes = [permissions.IsAdminUser]
 
     def list(self, request):
@@ -39,7 +38,6 @@ class UserAdminViewSet(viewsets.ViewSet):
 
 
 class AuthViewSet(viewsets.ViewSet):
-    """Authentication-related actions: register (admin-only), login (public), profile (authenticated)."""
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAdminUser])
     def register(self, request):
         serializer = RegisterSerializer(data=request.data)

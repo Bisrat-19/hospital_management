@@ -27,10 +27,8 @@ class RegisterSerializer(serializers.ModelSerializer):
         return user
 
     def update(self, instance, validated_data):
-        # Handle password separately so it is hashed via set_password
         password = validated_data.pop('password', None)
 
-        # Update other fields normally
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -48,9 +46,7 @@ class LoginSerializer(serializers.Serializer):
     def validate(self, data):
         user = authenticate(username=data['username'], password=data['password'])
         if user and user.is_active:
-            # store user for later use
             self.user = user
-            # create tokens and store them
             refresh = RefreshToken.for_user(user)
             self.tokens = {
                 'refresh': str(refresh),
@@ -60,7 +56,6 @@ class LoginSerializer(serializers.Serializer):
         raise serializers.ValidationError("Invalid credentials")
 
     def get_token_data(self):
-        # Return token data plus serialized user
         user_data = UserSerializer(self.user).data if hasattr(self, 'user') else None
         return {
             'refresh': self.tokens.get('refresh') if hasattr(self, 'tokens') else None,

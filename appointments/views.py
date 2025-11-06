@@ -29,7 +29,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update']:
             permission_classes = [IsDoctor]  # Doctor creates follow-ups
-        elif self.action == 'list':
+        elif self.action in ['list']:
             permission_classes = [IsAdminOrReceptionist | IsDoctor]
         elif self.action == 'retrieve':
             permission_classes = [IsAdminOrReceptionist | IsDoctor]
@@ -39,14 +39,40 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             permission_classes = [permissions.IsAuthenticated]
         return [p() for p in permission_classes]
 
-    # 👩‍⚕️ Doctor can view their own today's appointments
+    def list(self, request, *args, **kwargs):
+        qs = self.get_queryset().order_by('-appointment_date')
+        # If you want doctors to only see their own in list, uncomment next two lines:
+        # if getattr(request.user, 'role', None) == 'doctor':
+        #     qs = qs.filter(doctor=request.user)
+
+        initial_qs = qs.filter(appointment_type='initial')
+        follow_qs = qs.filter(appointment_type='follow_up')
+
+        initial_data = self.get_serializer(initial_qs, many=True).data
+        follow_data = self.get_serializer(follow_qs, many=True).data
+
+        return Response({
+            'initial': initial_data,
+            'follow_up': follow_data,
+        })
+
+    # 👩‍⚕️ Doctor can view their own today's appointments (grouped)
     @action(detail=False, methods=['get'], permission_classes=[IsDoctor])
     def today(self, request):
         today = timezone.now().date()
         doctor = request.user
-        appointments = Appointment.objects.filter(
+        qs = Appointment.objects.filter(
             doctor=doctor,
             appointment_date__date=today
         ).order_by('appointment_date')
-        serializer = self.get_serializer(appointments, many=True)
-        return Response(serializer.data)
+
+        initial_qs = qs.filter(appointment_type='initial')
+        follow_qs = qs.filter(appointment_type='follow_up')
+
+        initial_data = self.get_serializer(initial_qs, many=True).data
+        follow_data = self.get_serializer(follow_qs, many=True).data
+
+        return Response({
+            'initial': initial_data,
+            'follow_up': follow_data,
+        })

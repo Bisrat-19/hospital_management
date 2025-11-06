@@ -28,12 +28,10 @@ class PatientSerializer(serializers.ModelSerializer):
         read_only_fields = ['queue_number']
 
     def create(self, validated_data):
-        # ✅ Auto-assign doctor if not provided
         if 'assigned_doctor' not in validated_data or validated_data['assigned_doctor'] is None:
             doctor = User.objects.filter(role='doctor').first()
             validated_data['assigned_doctor'] = doctor
 
-        # ✅ Prevent duplicate patient
         dob = validated_data.get('date_of_birth')
         if Patient.objects.filter(
             first_name=validated_data['first_name'],
@@ -42,10 +40,8 @@ class PatientSerializer(serializers.ModelSerializer):
         ).exists():
             raise serializers.ValidationError("Patient with same name and DOB already exists.")
 
-        # ✅ Create patient
         patient = super().create(validated_data)
 
-        # ✅ Automatically create an initial appointment
         Appointment.objects.create(
             patient=patient,
             doctor=patient.assigned_doctor,
@@ -57,12 +53,10 @@ class PatientSerializer(serializers.ModelSerializer):
         return patient
 
     def update(self, instance, validated_data):
-        # Handle assigned doctor separately
         assigned_doctor = validated_data.pop('assigned_doctor', None)
         if assigned_doctor:
             instance.assigned_doctor = assigned_doctor
 
-        # Update other fields normally
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
