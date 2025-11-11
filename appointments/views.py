@@ -6,7 +6,7 @@ from .models import Appointment
 from .serializers import AppointmentSerializer
 
 
-# 🔐 Custom Permissions
+# Custom Permissions
 class IsDoctor(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and getattr(request.user, 'role', None) == 'doctor'
@@ -41,10 +41,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
     def list(self, request, *args, **kwargs):
         qs = self.get_queryset().order_by('-appointment_date')
-        # If you want doctors to only see their own in list, uncomment next two lines:
-        # if getattr(request.user, 'role', None) == 'doctor':
-        #     qs = qs.filter(doctor=request.user)
-
         initial_qs = qs.filter(appointment_type='initial')
         follow_qs = qs.filter(appointment_type='follow_up')
 
@@ -56,7 +52,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             'follow_up': follow_data,
         })
 
-    # 👩‍⚕️ Doctor can view their own today's appointments (grouped)
+    # Doctor can view their own today's appointments (grouped)
     @action(detail=False, methods=['get'], permission_classes=[IsDoctor])
     def today(self, request):
         today = timezone.now().date()

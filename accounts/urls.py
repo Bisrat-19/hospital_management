@@ -4,8 +4,8 @@ from .views import AuthViewSet, UserAdminViewSet
 
 router = DefaultRouter()
 
-router.register(r'', UserAdminViewSet, basename='user')
-router.register(r'', AuthViewSet, basename='auth')
+router.register(r'users', UserAdminViewSet, basename='user')
+router.register(r'auth', AuthViewSet, basename='auth')
 
 urlpatterns = [
     path('', include(router.urls)),

@@ -14,7 +14,7 @@ class DoctorSerializer(serializers.ModelSerializer):
 class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
-        fields = ['id', 'first_name', 'last_name']
+        fields = ['id', 'first_name', 'last_name','gender', 'date_of_birth']
 
 
 class AppointmentSerializer(serializers.ModelSerializer):
@@ -59,7 +59,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
             'appointment_date',
             'appointment_type',
             'initial_appointment', 'initial_appointment_id',
-            'treatment',              # NEW
+            'treatment',              
             'notes',
             'status',
             'created_at',
