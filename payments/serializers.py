@@ -65,9 +65,7 @@ class PaymentCreateSerializer(serializers.ModelSerializer):
             reference=reference,
             status='pending'
         )
-        self.payment_method = method  
         self._checkout_url = None
-
         if method == "cash":
             payment.status = "paid"
             payment.save(update_fields=["status", "updated_at"])
@@ -130,6 +128,21 @@ class PaymentCreateSerializer(serializers.ModelSerializer):
 
     def get_payment_url(self, obj):
         return getattr(self, "_checkout_url", None)
+
+    def build_response(self, payment):
+        # Centralized payment response used by patient serializer
+        data = {
+            "id": payment.id,
+            "amount": str(payment.amount),
+            "payment_method": payment.payment_method,
+            "status": payment.status,
+            "reference": payment.reference,
+        }
+        if payment.payment_method == "chapa":
+            url = self.get_payment_url(payment)
+            if url:
+                data["payment_url"] = url
+        return data
 
 class PaymentWebhookSerializer(serializers.Serializer):
     tx_ref = serializers.CharField()
