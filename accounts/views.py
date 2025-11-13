@@ -1,40 +1,21 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from django.shortcuts import get_object_or_404
 from .serializers import UserSerializer, RegisterSerializer, LoginSerializer
 
 from .models import User
-from .serializers import UserSerializer, RegisterSerializer
 
 
-class UserAdminViewSet(viewsets.ViewSet):
+class UserAdminViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAdminUser]
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    http_method_names = ['get', 'put', 'patch', 'delete']  
 
-    def list(self, request):
-        users = User.objects.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-    def retrieve(self, request, pk=None):
-        user = get_object_or_404(User, pk=pk)
-        serializer = UserSerializer(user)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-    def update(self, request, pk=None):
-        user = get_object_or_404(User, pk=pk)
-        serializer = RegisterSerializer(instance=user, data=request.data, partial=True)
-
-        if serializer.is_valid():
-            serializer.save()
-            return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def destroy(self, request, pk=None):
-        user = get_object_or_404(User, pk=pk)
-        user.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+    def get_serializer_class(self):
+        if self.action in ['update', 'partial_update']:
+            return RegisterSerializer
+        return UserSerializer
 
 
 class AuthViewSet(viewsets.ViewSet):
