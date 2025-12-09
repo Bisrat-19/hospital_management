@@ -1,6 +1,7 @@
 from rest_framework import status, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.utils import timezone
 from .models import Payment
 from .serializers import PaymentSerializer, PaymentCreateSerializer, PaymentWebhookSerializer
 
@@ -37,3 +38,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         payment = serializer.save()
         return Response({"message": "Payment status updated", "status": payment.status})
+
+    @action(detail=False, methods=['get'])
+    def today(self, request):
+        today = timezone.now().date()
+        queryset = self.get_queryset().filter(created_at__date=today)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)

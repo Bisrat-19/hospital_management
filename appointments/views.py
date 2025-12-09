@@ -76,6 +76,31 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         cache.set(cache_key, payload, timeout=CACHE_TTL)
         return Response(payload)
 
+    @action(detail=False, methods=['get'], permission_classes=[IsDoctor], url_path='today/Initial')
+    def today_initial(self, request):
+        today = timezone.now().date()
+        doctor = request.user
+        qs = Appointment.objects.filter(
+            doctor=doctor,
+            appointment_date__date=today,
+            appointment_type='initial'
+        ).order_by('appointment_date')
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsDoctor], url_path='today/followup')
+    def today_followup(self, request):
+        today = timezone.now().date()
+        doctor = request.user
+        
+        qs = Appointment.objects.filter(
+            doctor=doctor,
+            appointment_date__date=today,
+            appointment_type='follow_up'
+        ).order_by('appointment_date')
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
     def _build_grouped_payload(self, qs):
         initial_qs = qs.filter(appointment_type='initial')
         follow_qs = qs.filter(appointment_type='follow_up')

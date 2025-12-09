@@ -1,7 +1,9 @@
 import logging
 from rest_framework import viewsets, permissions
 from rest_framework.response import Response
+from rest_framework.decorators import action
 from rest_framework import status
+from django.utils import timezone
 from django.core.cache import cache
 from django.conf import settings
 from .models import Patient
@@ -89,3 +91,10 @@ class PatientViewSet(viewsets.ModelViewSet):
         instance.delete()
         cache.delete("all_patients")
         cache.delete(f"patient_{pk}")
+
+    @action(detail=False, methods=['get'])
+    def today(self, request):
+        today = timezone.now().date()
+        queryset = self.get_queryset().filter(created_at__date=today)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)

@@ -1,7 +1,11 @@
 from rest_framework import viewsets, permissions
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
+from django.utils import timezone
 from .models import Treatment
 from .serializers import TreatmentSerializer
+from patients.models import Patient
 
 class IsDoctor(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -42,8 +46,18 @@ class TreatmentViewSet(viewsets.ModelViewSet):
             initial.status = 'completed'
             initial.save(update_fields=['status'])
 
+        # Update patient status to seen
+        Patient.objects.filter(pk=instance.patient_id).update(is_seen=True)
+
     def perform_update(self, serializer):
         instance = serializer.save()
         if instance.follow_up_required is False and instance.appointment and instance.appointment.status != 'completed':
             instance.appointment.status = 'completed'
             instance.appointment.save(update_fields=['status'])
+
+    @action(detail=False, methods=['get'])
+    def today(self, request):
+        today = timezone.now().date()
+        queryset = self.get_queryset().filter(created_at__date=today)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
