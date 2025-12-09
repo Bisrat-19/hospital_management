@@ -7,7 +7,6 @@ class Treatment(models.Model):
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='treatments')
     doctor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='treatments')
 
-    # Use FK (not OneToOne) to avoid UNIQUE errors; enforce uniqueness in code
     appointment = models.ForeignKey(
         Appointment,
         on_delete=models.CASCADE,

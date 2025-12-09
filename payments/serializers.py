@@ -78,13 +78,15 @@ class PaymentCreateSerializer(serializers.ModelSerializer):
             payment.save(update_fields=["status", "updated_at"])
             raise ServerConfigError("CHAPA_SECRET_KEY not configured (load .env or set in settings)")
 
-        request = self.context.get("request")
-        callback_url = request.build_absolute_uri(reverse("payment-webhook")) if request else ""
+        req = self.context.get("request")
+        callback_url = req.build_absolute_uri(reverse("payment-webhook")) if req else ""
         return_url = getattr(settings, "PAYMENT_RETURN_URL", None) or callback_url
 
-        patient_email = getattr(patient, "email", None)
+        # Always use configured default email; patients may not have email
         default_email = getattr(settings, "DEFAULT_PAYMENT_EMAIL", None)
-        email = patient_email if (patient_email and "@" in patient_email) else (default_email if (default_email and "@" in default_email) else "bisratd28@gmail.com")
+        if not default_email or "@" not in default_email:
+            raise ServerConfigError("DEFAULT_PAYMENT_EMAIL not configured or invalid")
+        email = default_email
 
         title = "Card Payment"[:16]
         payload = {

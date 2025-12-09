@@ -13,9 +13,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 from datetime import timedelta
 import os
+import secrets
 from dotenv import load_dotenv
 
-# Load .env file
 load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -26,12 +26,27 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-+=u(3i6yvk-c@6z=#$y1yv*js1a$0kun3zb3si29_6vz&m+i56'
+# Load from environment; generate ephemeral dev key if missing
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    # Ephemeral insecure key (only acceptable for local development)
+    SECRET_KEY = 'dev-insecure-' + secrets.token_urlsafe(32)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DJANGO_DEBUG', 'true').lower() == 'true'
 
 ALLOWED_HOSTS = []
+# Derive allowed hosts from env var DJANGO_ALLOWED_HOSTS (comma-separated)
+_allowed_hosts_env = os.getenv('DJANGO_ALLOWED_HOSTS', '')
+if _allowed_hosts_env:
+    ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_env.split(',') if h.strip()]
+else:
+    # Safe defaults for local development when DEBUG may be False
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+# Payment / external service configuration
+PAYMENT_RETURN_URL = os.getenv('PAYMENT_RETURN_URL')  
+DEFAULT_PAYMENT_EMAIL = os.getenv('DEFAULT_PAYMENT_EMAIL')  
 
 
 # Application definition
@@ -168,18 +183,27 @@ SPECTACULAR_SETTINGS = {
 }
 
 
+# Cache configuration (environment-driven)
+REDIS_URL = os.getenv('CACHE_URL') or os.getenv('REDIS_URL') or 'redis://127.0.0.1:6379/1'
+CACHE_KEY_PREFIX = os.getenv('CACHE_KEY_PREFIX', 'hospital_mgmt')
+CACHE_SERIALIZER = os.getenv('CACHE_SERIALIZER', 'json').lower()  # json | pickle
+if CACHE_SERIALIZER == 'pickle':
+    _serializer_path = 'django_redis.serializers.pickle.PickleSerializer'
+else:
+    _serializer_path = 'django_redis.serializers.json.JSONSerializer'
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",  
+        "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SERIALIZER": "django_redis.serializers.json.JSONSerializer",
+            "SERIALIZER": _serializer_path,
         },
-        "KEY_PREFIX": "hospital_mgmt"
+        "KEY_PREFIX": CACHE_KEY_PREFIX,
     }
 }
 
-
-CACHE_TTL = 60 * 60 * 24  # 24 hours
+# TTL override (seconds) default 24h
+CACHE_TTL = int(os.getenv('CACHE_TTL', 60 * 60 * 24))
 

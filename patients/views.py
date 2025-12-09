@@ -1,3 +1,4 @@
+import logging
 from rest_framework import viewsets, permissions
 from rest_framework.response import Response
 from rest_framework import status
@@ -7,6 +8,7 @@ from .models import Patient
 from .serializers import PatientSerializer
 
 CACHE_TTL = getattr(settings, 'CACHE_TTL', 300)
+logger = logging.getLogger(__name__)
 
 
 class IsReceptionist(permissions.BasePermission):
@@ -50,9 +52,9 @@ class PatientViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(queryset, many=True)
             data = serializer.data
             cache.set(cache_key, data, timeout=CACHE_TTL)
-            print("Cache MISS — patients list")
+            logger.debug("patients.list cache miss; cached %d records", len(data))
         else:
-            print("Cache HIT — patients list")
+            logger.debug("patients.list cache hit")
         return Response(data, status=status.HTTP_200_OK)
 
     # Cached single patient retrieval
@@ -67,34 +69,23 @@ class PatientViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(patient)
             data = serializer.data
             cache.set(cache_key, data, timeout=CACHE_TTL)
-            print(f"Cache MISS — patient {pk}")
+            logger.debug("patients.retrieve cache miss for id=%s", pk)
         else:
-            print(f"Cache HIT — patient {pk}")
+            logger.debug("patients.retrieve cache hit for id=%s", pk)
         return Response(data, status=status.HTTP_200_OK)
 
     # Invalidate caches on create/update/partial_update/destroy
     def perform_create(self, serializer):
         instance = serializer.save()
         cache.delete("all_patients")
-        return instance
+    
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        cache.delete("all_patients")
+        cache.delete(f"patient_{instance.pk}")
 
-    def update(self, request, *args, **kwargs):
-        response = super().update(request, *args, **kwargs)
-        pk = kwargs.get("pk")
+    def perform_destroy(self, instance):
+        pk = instance.pk
+        instance.delete()
         cache.delete("all_patients")
         cache.delete(f"patient_{pk}")
-        return response
-
-    def partial_update(self, request, *args, **kwargs):
-        response = super().partial_update(request, *args, **kwargs)
-        pk = kwargs.get("pk")
-        cache.delete("all_patients")
-        cache.delete(f"patient_{pk}")
-        return response
-
-    def destroy(self, request, *args, **kwargs):
-        pk = kwargs.get("pk")
-        response = super().destroy(request, *args, **kwargs)
-        cache.delete("all_patients")
-        cache.delete(f"patient_{pk}")
-        return response

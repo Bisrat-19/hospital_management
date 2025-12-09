@@ -26,7 +26,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         payment = serializer.save()
-        if serializer.payment_method == 'chapa':
+        if payment.payment_method == 'chapa':
             checkout = serializer.get_payment_url(payment)
             return Response({"payment_url": checkout, "reference": payment.reference}, status=status.HTTP_201_CREATED)
         return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)

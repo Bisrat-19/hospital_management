@@ -36,7 +36,6 @@ class AppointmentSerializer(serializers.ModelSerializer):
         allow_null=True
     )
 
-    # Keep the link to initial if you already added this field in the model
     initial_appointment = serializers.PrimaryKeyRelatedField(read_only=True)
     initial_appointment_id = serializers.PrimaryKeyRelatedField(
         queryset=Appointment.objects.all(),
@@ -46,7 +45,6 @@ class AppointmentSerializer(serializers.ModelSerializer):
         allow_null=True
     )
 
-    # Optional: keep a simple display id: "I" for initial, "F" for follow_up
     display_id = serializers.CharField(read_only=True)
 
     class Meta:
@@ -87,7 +85,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'treatment': 'Follow-up requires a treatment ID.'})
             if treatment.patient_id != getattr(patient, 'id', None):
                 raise serializers.ValidationError({'treatment': 'Treatment must belong to the same patient.'})
-            # align patient/doctor if omitted
+    
             attrs['patient'] = initial_appt.patient
             attrs['doctor'] = initial_appt.doctor
         else:

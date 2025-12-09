@@ -1,3 +1,4 @@
+import logging
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -7,6 +8,7 @@ from .serializers import UserSerializer, RegisterSerializer, LoginSerializer, Ch
 from .models import User
 
 CACHE_TTL = getattr(settings, 'CACHE_TTL', 300)
+logger = logging.getLogger(__name__)
 
 
 class UserAdminViewSet(viewsets.ModelViewSet):
@@ -30,9 +32,9 @@ class UserAdminViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(queryset, many=True)
             users = serializer.data
             cache.set(cache_key, users, timeout=CACHE_TTL)
-            print("Cache MISS — data fetched from DB")
+            logger.debug("accounts.users.list cache miss; cached %d users", len(users))
         else:
-            print("Cache HIT — data fetched from Redis")
+            logger.debug("accounts.users.list cache hit")
 
         return Response(users, status=status.HTTP_200_OK)
 
@@ -50,9 +52,9 @@ class UserAdminViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(user)
             user_data = serializer.data
             cache.set(cache_key, user_data, timeout=CACHE_TTL)
-            print(f"Cache MISS for user {pk}")
+            logger.debug("accounts.users.retrieve cache miss for id=%s", pk)
         else:
-            print(f"Cache HIT for user {pk}")
+            logger.debug("accounts.users.retrieve cache hit for id=%s", pk)
 
         return Response(user_data, status=status.HTTP_200_OK)
 
@@ -65,9 +67,9 @@ class UserAdminViewSet(viewsets.ModelViewSet):
             serializer = UserSerializer(request.user)
             profile_data = serializer.data
             cache.set(cache_key, profile_data, timeout=CACHE_TTL)
-            print(f"Cache MISS for profile {request.user.id}")
+            logger.debug("accounts.profile cache miss for id=%s", request.user.id)
         else:
-            print(f"Cache HIT for profile {request.user.id}")
+            logger.debug("accounts.profile cache hit for id=%s", request.user.id)
 
         return Response(profile_data, status=status.HTTP_200_OK)
 
@@ -92,19 +94,16 @@ class UserAdminViewSet(viewsets.ModelViewSet):
         return Response({"detail": "Password updated successfully"}, status=status.HTTP_200_OK)
 
     # Clear cache when updating or deleting a user
-    def update(self, request, *args, **kwargs):
-        response = super().update(request, *args, **kwargs)
-        pk = kwargs.get("pk")
-        cache.delete(f"user_{pk}")
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        cache.delete(f"user_{instance.pk}")
         cache.delete("all_users")
-        return response
 
-    def destroy(self, request, *args, **kwargs):
-        pk = kwargs.get("pk")
-        response = super().destroy(request, *args, **kwargs)
+    def perform_destroy(self, instance):
+        pk = instance.pk
+        instance.delete()
         cache.delete(f"user_{pk}")
         cache.delete("all_users")
-        return response
 
 class AuthViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAdminUser])

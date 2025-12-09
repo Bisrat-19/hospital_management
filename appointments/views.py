@@ -1,3 +1,4 @@
+import logging
 from rest_framework import viewsets, permissions
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -9,6 +10,7 @@ from .serializers import AppointmentSerializer
 
 
 CACHE_TTL = getattr(settings, 'CACHE_TTL', 300)
+logger = logging.getLogger(__name__)
 
 class IsDoctor(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -46,20 +48,15 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         cache_key = "appointments_grouped"
         cached = cache.get(cache_key)
         if cached:
-            print("Cache HIT — appointments list")
+            logger.debug("appointments.list cache hit")
             return Response(cached)
 
-        print("Cache MISS — appointments list")
+        logger.debug("appointments.list cache miss; rebuilding payload")
         qs = self.get_queryset().order_by('-appointment_date')
-        initial_qs = qs.filter(appointment_type='initial')
-        follow_qs = qs.filter(appointment_type='follow_up')
-        initial_data = self.get_serializer(initial_qs, many=True).data
-        follow_data = self.get_serializer(follow_qs, many=True).data
-        payload = {'initial': initial_data, 'follow_up': follow_data}
+        payload = self._build_grouped_payload(qs)
         cache.set(cache_key, payload, timeout=CACHE_TTL)
         return Response(payload)
 
-    # Doctor can view their own today's appointments (grouped)
     @action(detail=False, methods=['get'], permission_classes=[IsDoctor])
     def today(self, request):
         today = timezone.now().date()
@@ -67,21 +64,24 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         cache_key = f"appointments_today_{doctor.id}_{today.isoformat()}"
         cached = cache.get(cache_key)
         if cached:
-            print(f"Cache HIT — today appointments doctor {doctor.id}")
+            logger.debug("appointments.today cache hit for doctor=%s", doctor.id)
             return Response(cached)
 
-        print(f"Cache MISS — today appointments doctor {doctor.id}")
+        logger.debug("appointments.today cache miss for doctor=%s; rebuilding payload", doctor.id)
         qs = Appointment.objects.filter(
             doctor=doctor,
             appointment_date__date=today
         ).order_by('appointment_date')
+        payload = self._build_grouped_payload(qs)
+        cache.set(cache_key, payload, timeout=CACHE_TTL)
+        return Response(payload)
+
+    def _build_grouped_payload(self, qs):
         initial_qs = qs.filter(appointment_type='initial')
         follow_qs = qs.filter(appointment_type='follow_up')
         initial_data = self.get_serializer(initial_qs, many=True).data
         follow_data = self.get_serializer(follow_qs, many=True).data
-        payload = {'initial': initial_data, 'follow_up': follow_data}
-        cache.set(cache_key, payload, timeout=CACHE_TTL)
-        return Response(payload)
+        return {'initial': initial_data, 'follow_up': follow_data}
 
     def perform_create(self, serializer):
         instance = serializer.save()
@@ -89,7 +89,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appt_date = getattr(instance, 'appointment_date', None)
         if appt_date:
             cache.delete(f"appointments_today_{instance.doctor.id}_{appt_date.date().isoformat()}")
-        return instance
 
     def perform_update(self, serializer):
         instance = serializer.save()
@@ -97,7 +96,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appt_date = getattr(instance, 'appointment_date', None)
         if appt_date:
             cache.delete(f"appointments_today_{instance.doctor.id}_{appt_date.date().isoformat()}")
-        return instance
 
     def perform_destroy(self, instance):
         appt_date = getattr(instance, 'appointment_date', None)
