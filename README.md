@@ -146,19 +146,6 @@ python manage.py spectacular --file schema.yaml
 
 ---
 
-## Role-Based Access Summary
-
-| Action | Admin | Doctor | Receptionist |
-|--------|-------|--------|--------------|
-| Register users | ✅ | ❌ | ❌ |
-| Register patients | ❌ | ❌ | ✅ |
-| View all patients | ✅ | ❌ | ✅ |
-| Create treatment | ❌ | ✅ | ❌ |
-| Create follow-up | ❌ | ✅ | ❌ |
-| Collect payment | ✅ | ✅ | ✅ |
-| Delete records | ✅ | ❌ | ❌ |
-
----
 
 ## Technology Stack
 
@@ -199,16 +186,6 @@ CACHE_TTL=86400
 
 ---
 
-## Next Steps
-
-1. **Share Documentation**: Send `PROJECT_DOCUMENTATION.md` to your team or client
-2. **API Testing**: Import `openapi-spec.yaml` into Postman or Swagger
-3. **Frontend Integration**: Use the API documentation to build the frontend
-4. **Testing**: Test all workflows described in the documentation
-5. **Deployment**: Configure production environment variables
-
----
-
 ## Access Interactive API Documentation
 
 Your project already has built-in API documentation. When your server is running:
@@ -225,14 +202,3 @@ These provide interactive API documentation where you can:
 
 ---
 
-## Files Location
-
-All documentation files are saved in:
-```
-/home/bisrat/.gemini/antigravity/brain/03b122b9-e68a-4004-a827-19a45153e481/
-├── PROJECT_DOCUMENTATION.md (Comprehensive guide)
-├── openapi-spec.yaml (Handcrafted OpenAPI spec)
-└── hospital_schema_auto_generated.yaml (Auto-generated from Django)
-```
-
-You can copy these files to your project directory or share them directly.
