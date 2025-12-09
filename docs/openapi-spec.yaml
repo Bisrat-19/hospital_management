@@ -1,0 +1,1385 @@
+openapi: 3.0.3
+info:
+  title: Hospital Management API
+  version: 1.0.0
+  description: |
+    Complete API for Hospital Management System with patient registration, 
+    appointment scheduling, treatment management, and payment processing.
+    
+    ### Authentication
+    All endpoints (except login and payment webhook) require JWT authentication.
+    Include the access token in the Authorization header:
+    ```
+    Authorization: Bearer <access_token>
+    ```
+    
+    ### User Roles
+    - **Admin**: Create users, full system access
+    - **Receptionist**: Register patients, collect payments
+    - **Doctor**: View appointments, provide treatment, create follow-ups
+    
+  contact:
+    name: Hospital Management System
+    email: support@hospital.com
+
+servers:
+  - url: http://localhost:8000
+    description: Development server
+
+tags:
+  - name: Authentication
+    description: User login and registration
+  - name: Users
+    description: User management (Admin only)
+  - name: Patients
+    description: Patient registration and management
+  - name: Appointments
+    description: Appointment scheduling (initial and follow-up)
+  - name: Treatments
+    description: Treatment records and prescriptions
+  - name: Payments
+    description: Payment processing (Cash and Chapa)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 5
+        username:
+          type: string
+          example: "dr_john"
+        first_name:
+          type: string
+          example: "John"
+        last_name:
+          type: string
+          example: "Doe"
+        email:
+          type: string
+          format: email
+          example: "john.doe@hospital.com"
+        role:
+          type: string
+          enum: [admin, doctor, receptionist]
+          example: "doctor"
+    
+    UserRegister:
+      type: object
+      required:
+        - username
+        - password
+        - role
+      properties:
+        username:
+          type: string
+          example: "dr_john"
+        password:
+          type: string
+          format: password
+          example: "SecurePass123!"
+        first_name:
+          type: string
+          example: "John"
+        last_name:
+          type: string
+          example: "Doe"
+        email:
+          type: string
+          format: email
+          example: "john.doe@hospital.com"
+        role:
+          type: string
+          enum: [admin, doctor, receptionist]
+          example: "doctor"
+    
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: "dr_john"
+        password:
+          type: string
+          format: password
+          example: "SecurePass123!"
+    
+    LoginResponse:
+      type: object
+      properties:
+        refresh:
+          type: string
+          example: "eyJ0eXAiOiJKV1QiLCJhbGc..."
+        access:
+          type: string
+          example: "eyJ0eXAiOiJKV1QiLCJhbGc..."
+        user:
+          $ref: '#/components/schemas/User'
+    
+    ChangePassword:
+      type: object
+      required:
+        - new_password
+      properties:
+        new_password:
+          type: string
+          format: password
+          example: "NewSecurePass123!"
+        confirm_password:
+          type: string
+          format: password
+          example: "NewSecurePass123!"
+    
+    DoctorInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 5
+        username:
+          type: string
+          example: "dr_john"
+        email:
+          type: string
+          example: "john.doe@hospital.com"
+    
+    Patient:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 10
+        first_name:
+          type: string
+          example: "Jane"
+        last_name:
+          type: string
+          example: "Williams"
+        date_of_birth:
+          type: string
+          format: date
+          nullable: true
+          example: "1990-05-15"
+        gender:
+          type: string
+          enum: [M, F]
+          example: "F"
+        contact_number:
+          type: string
+          example: "+251911234567"
+        address:
+          type: string
+          example: "Addis Ababa, Bole"
+        assigned_doctor:
+          $ref: '#/components/schemas/DoctorInfo'
+        queue_number:
+          type: integer
+          example: 23
+          readOnly: true
+        is_seen:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    
+    PatientCreate:
+      type: object
+      required:
+        - first_name
+        - last_name
+        - gender
+        - contact_number
+        - payment_method
+        - amount
+      properties:
+        first_name:
+          type: string
+          example: "Jane"
+        last_name:
+          type: string
+          example: "Williams"
+        date_of_birth:
+          type: string
+          format: date
+          nullable: true
+          example: "1990-05-15"
+        gender:
+          type: string
+          enum: [M, F]
+          example: "F"
+        contact_number:
+          type: string
+          example: "+251911234567"
+        address:
+          type: string
+          example: "Addis Ababa, Bole"
+        assigned_doctor_id:
+          type: integer
+          nullable: true
+          example: 5
+          description: "Doctor ID - auto-assigns if not provided"
+        payment_method:
+          type: string
+          enum: [cash, chapa]
+          example: "cash"
+        amount:
+          type: number
+          format: decimal
+          example: 500.00
+    
+    PatientResponse:
+      allOf:
+        - $ref: '#/components/schemas/Patient'
+        - type: object
+          properties:
+            payment:
+              $ref: '#/components/schemas/PaymentInfo'
+    
+    Appointment:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 50
+        patient:
+          type: integer
+          example: 10
+        doctor:
+          type: integer
+          example: 5
+        appointment_date:
+          type: string
+          format: date-time
+          example: "2025-12-09T14:30:00Z"
+        appointment_type:
+          type: string
+          enum: [initial, follow_up]
+          example: "initial"
+        initial_appointment:
+          type: integer
+          nullable: true
+          example: null
+          description: "For follow-ups, ID of the initial appointment"
+        treatment:
+          type: integer
+          nullable: true
+          example: null
+          description: "For follow-ups, ID of the treatment record"
+        type_seq:
+          type: integer
+          readOnly: true
+          example: 50
+        case_followup_seq:
+          type: integer
+          nullable: true
+          readOnly: true
+          example: null
+        notes:
+          type: string
+          example: "Initial consultation upon registration."
+        status:
+          type: string
+          enum: [pending, completed, cancelled]
+          example: "pending"
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    
+    AppointmentCreate:
+      type: object
+      required:
+        - patient
+        - doctor
+        - appointment_date
+        - appointment_type
+      properties:
+        patient:
+          type: integer
+          example: 10
+        doctor:
+          type: integer
+          example: 5
+        appointment_date:
+          type: string
+          format: date-time
+          example: "2025-12-15T10:00:00Z"
+        appointment_type:
+          type: string
+          enum: [initial, follow_up]
+          example: "follow_up"
+        initial_appointment:
+          type: integer
+          nullable: true
+          example: 50
+          description: "Required for follow-ups"
+        treatment:
+          type: integer
+          nullable: true
+          example: 12
+          description: "Required for follow-ups"
+        notes:
+          type: string
+          example: "Follow-up for blood pressure check"
+    
+    AppointmentGrouped:
+      type: object
+      properties:
+        initial:
+          type: array
+          items:
+            $ref: '#/components/schemas/Appointment'
+        follow_up:
+          type: array
+          items:
+            $ref: '#/components/schemas/Appointment'
+    
+    Treatment:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 12
+        patient:
+          type: integer
+          example: 10
+          readOnly: true
+        doctor:
+          type: integer
+          example: 5
+          readOnly: true
+        appointment:
+          type: integer
+          example: 50
+          description: "Initial appointment ID"
+        notes:
+          type: string
+          example: "Patient diagnosed with hypertension. Blood pressure: 140/90."
+        prescription:
+          type: string
+          nullable: true
+          example: "Amlodipine 5mg once daily. Low sodium diet."
+        follow_up_required:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    
+    TreatmentCreate:
+      type: object
+      required:
+        - appointment
+        - notes
+      properties:
+        appointment:
+          type: integer
+          example: 50
+          description: "Must be an initial appointment ID"
+        notes:
+          type: string
+          example: "Patient diagnosed with hypertension. Blood pressure: 140/90."
+        prescription:
+          type: string
+          nullable: true
+          example: "Amlodipine 5mg once daily. Low sodium diet."
+        follow_up_required:
+          type: boolean
+          default: false
+          example: true
+    
+    Payment:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 15
+        patient:
+          type: integer
+          example: 10
+        amount:
+          type: number
+          format: decimal
+          example: 500.00
+        payment_method:
+          type: string
+          enum: [cash, chapa]
+          example: "cash"
+        reference:
+          type: string
+          readOnly: true
+          example: "a8b7c6d5-e4f3-g2h1-i0j9-k8l7m6n5o4p3"
+        status:
+          type: string
+          enum: [pending, paid, failed]
+          readOnly: true
+          example: "paid"
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+    
+    PaymentCreate:
+      type: object
+      required:
+        - patient_id
+        - amount
+        - payment_method
+      properties:
+        patient_id:
+          type: integer
+          example: 10
+        amount:
+          type: number
+          format: decimal
+          example: 500.00
+        payment_method:
+          type: string
+          enum: [cash, chapa]
+          example: "cash"
+    
+    PaymentInfo:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 15
+        amount:
+          type: string
+          example: "500.00"
+        payment_method:
+          type: string
+          example: "cash"
+        status:
+          type: string
+          example: "paid"
+        reference:
+          type: string
+          example: "a8b7c6d5-e4f3-g2h1-i0j9-k8l7m6n5o4p3"
+        payment_url:
+          type: string
+          nullable: true
+          example: "https://checkout.chapa.co/checkout/payment/..."
+    
+    PaymentChapaResponse:
+      type: object
+      properties:
+        payment_url:
+          type: string
+          example: "https://checkout.chapa.co/checkout/payment/..."
+        reference:
+          type: string
+          example: "b9c8d7e6-f5g4-h3i2-j1k0-l9m8n7o6p5q4"
+    
+    WebhookRequest:
+      type: object
+      required:
+        - tx_ref
+      properties:
+        tx_ref:
+          type: string
+          example: "b9c8d7e6-f5g4-h3i2-j1k0-l9m8n7o6p5q4"
+    
+    WebhookResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Payment status updated"
+        status:
+          type: string
+          example: "paid"
+    
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: "Authentication credentials were not provided."
+
+paths:
+  /accounts/auth/login/:
+    post:
+      tags:
+        - Authentication
+      summary: User Login
+      description: Authenticate user and receive JWT tokens
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  
+  /accounts/auth/register/:
+    post:
+      tags:
+        - Authentication
+      summary: Register New User (Admin Only)
+      description: Create a new user account (doctor or receptionist)
+      operationId: registerUser
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegister'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Validation error
+        '403':
+          description: Permission denied (not admin)
+  
+  /accounts/users/:
+    get:
+      tags:
+        - Users
+      summary: List All Users
+      description: Get list of all users (Admin only)
+      operationId: listUsers
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '403':
+          description: Permission denied
+  
+  /accounts/users/{id}/:
+    get:
+      tags:
+        - Users
+      summary: Get Single User
+      description: Retrieve user details by ID (Admin only)
+      operationId: getUser
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          description: User not found
+    
+    put:
+      tags:
+        - Users
+      summary: Update User
+      description: Update user information (Admin only)
+      operationId: updateUser
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegister'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    
+    patch:
+      tags:
+        - Users
+      summary: Partial Update User
+      description: Partially update user information (Admin only)
+      operationId: partialUpdateUser
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                email:
+                  type: string
+      responses:
+        '200':
+          description: User updated
+    
+    delete:
+      tags:
+        - Users
+      summary: Delete User
+      description: Delete a user (Admin only)
+      operationId: deleteUser
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: User deleted
+        '403':
+          description: Permission denied
+  
+  /accounts/users/profile/:
+    get:
+      tags:
+        - Users
+      summary: Get Current User Profile
+      description: Get authenticated user's profile
+      operationId: getUserProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+  
+  /accounts/users/{id}/change-password/:
+    patch:
+      tags:
+        - Users
+      summary: Change Password
+      description: Change user password (Admin or self)
+      operationId: changePassword
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePassword'
+      responses:
+        '200':
+          description: Password updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: "Password updated successfully"
+        '403':
+          description: Permission denied
+  
+  /patients/:
+    get:
+      tags:
+        - Patients
+      summary: List All Patients
+      description: Get list of all patients (Admin or Receptionist)
+      operationId: listPatients
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of patients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Patient'
+        '403':
+          description: Permission denied
+    
+    post:
+      tags:
+        - Patients
+      summary: Register New Patient
+      description: |
+        Register a new patient with payment processing (Receptionist only).
+        Automatically creates initial appointment and processes payment.
+      operationId: createPatient
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatientCreate'
+      responses:
+        '201':
+          description: Patient registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientResponse'
+        '400':
+          description: Validation error
+        '403':
+          description: Permission denied
+  
+  /patients/{id}/:
+    get:
+      tags:
+        - Patients
+      summary: Get Single Patient
+      description: Retrieve patient details (Admin, Receptionist, or Doctor)
+      operationId: getPatient
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Patient details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+        '404':
+          description: Patient not found
+    
+    put:
+      tags:
+        - Patients
+      summary: Update Patient
+      description: Update patient information (Receptionist only)
+      operationId: updatePatient
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contact_number:
+                  type: string
+                address:
+                  type: string
+                assigned_doctor_id:
+                  type: integer
+      responses:
+        '200':
+          description: Patient updated
+    
+    patch:
+      tags:
+        - Patients
+      summary: Partial Update Patient
+      description: Partially update patient information (Receptionist only)
+      operationId: partialUpdatePatient
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contact_number:
+                  type: string
+                address:
+                  type: string
+      responses:
+        '200':
+          description: Patient updated
+    
+    delete:
+      tags:
+        - Patients
+      summary: Delete Patient
+      description: Delete a patient (Admin only)
+      operationId: deletePatient
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Patient deleted
+  
+  /appointments/:
+    get:
+      tags:
+        - Appointments
+      summary: List All Appointments (Grouped)
+      description: |
+        Get all appointments grouped by type (initial and follow-up).
+        Accessible by Admin, Receptionist, and Doctor.
+      operationId: listAppointments
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Grouped appointments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentGrouped'
+    
+    post:
+      tags:
+        - Appointments
+      summary: Create Follow-up Appointment
+      description: Create a new follow-up appointment (Doctor only)
+      operationId: createAppointment
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppointmentCreate'
+      responses:
+        '201':
+          description: Appointment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+        '400':
+          description: Validation error
+  
+  /appointments/{id}/:
+    get:
+      tags:
+        - Appointments
+      summary: Get Single Appointment
+      description: Retrieve appointment details
+      operationId: getAppointment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Appointment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+    
+    put:
+      tags:
+        - Appointments
+      summary: Update Appointment
+      description: Update appointment (Doctor only)
+      operationId: updateAppointment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [pending, completed, cancelled]
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Appointment updated
+    
+    patch:
+      tags:
+        - Appointments
+      summary: Partial Update Appointment
+      description: Partially update appointment (Doctor only)
+      operationId: partialUpdateAppointment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Appointment updated
+    
+    delete:
+      tags:
+        - Appointments
+      summary: Delete Appointment
+      description: Delete an appointment (Admin only)
+      operationId: deleteAppointment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Appointment deleted
+  
+  /appointments/today/:
+    get:
+      tags:
+        - Appointments
+      summary: Get Today's Appointments (Doctor)
+      description: |
+        Get today's appointments for the logged-in doctor, grouped by type.
+        Doctor only.
+      operationId: getTodayAppointments
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Today's appointments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentGrouped'
+        '403':
+          description: Permission denied
+  
+  /treatments/:
+    get:
+      tags:
+        - Treatments
+      summary: List All Treatments
+      description: |
+        Get list of all treatments.
+        Doctors see only their own treatments.
+      operationId: listTreatments
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of treatments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Treatment'
+    
+    post:
+      tags:
+        - Treatments
+      summary: Create Treatment
+      description: |
+        Create a new treatment record for a patient (Doctor only).
+        Links to initial appointment. One treatment per patient.
+      operationId: createTreatment
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TreatmentCreate'
+      responses:
+        '201':
+          description: Treatment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Treatment'
+        '400':
+          description: Validation error (duplicate or invalid appointment)
+  
+  /treatments/{id}/:
+    get:
+      tags:
+        - Treatments
+      summary: Get Single Treatment
+      description: Retrieve treatment details
+      operationId: getTreatment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Treatment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Treatment'
+    
+    put:
+      tags:
+        - Treatments
+      summary: Update Treatment
+      description: |
+        Update treatment record (Doctor only - own treatments).
+        Used for follow-up appointments to update the same treatment.
+      operationId: updateTreatment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+                prescription:
+                  type: string
+                follow_up_required:
+                  type: boolean
+      responses:
+        '200':
+          description: Treatment updated
+    
+    patch:
+      tags:
+        - Treatments
+      summary: Partial Update Treatment
+      description: Partially update treatment (Doctor only)
+      operationId: partialUpdateTreatment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+                prescription:
+                  type: string
+      responses:
+        '200':
+          description: Treatment updated
+    
+    delete:
+      tags:
+        - Treatments
+      summary: Delete Treatment
+      description: Delete a treatment (Doctor only - own treatments)
+      operationId: deleteTreatment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Treatment deleted
+  
+  /payments/:
+    get:
+      tags:
+        - Payments
+      summary: List All Payments
+      description: Get list of all payments
+      operationId: listPayments
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of payments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Payment'
+    
+    post:
+      tags:
+        - Payments
+      summary: Create Payment
+      description: |
+        Create a new payment record.
+        For cash payments, status is immediately 'paid'.
+        For Chapa payments, returns payment URL.
+      operationId: createPayment
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentCreate'
+      responses:
+        '201':
+          description: Payment created
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Payment'
+                  - $ref: '#/components/schemas/PaymentChapaResponse'
+        '400':
+          description: Validation error
+  
+  /payments/{id}/:
+    get:
+      tags:
+        - Payments
+      summary: Get Single Payment
+      description: Retrieve payment details
+      operationId: getPayment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Payment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+    
+    put:
+      tags:
+        - Payments
+      summary: Update Payment
+      description: Update payment record
+      operationId: updatePayment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [pending, paid, failed]
+      responses:
+        '200':
+          description: Payment updated
+    
+    patch:
+      tags:
+        - Payments
+      summary: Partial Update Payment
+      description: Partially update payment record
+      operationId: partialUpdatePayment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+      responses:
+        '200':
+          description: Payment updated
+    
+    delete:
+      tags:
+        - Payments
+      summary: Delete Payment
+      description: Delete a payment
+      operationId: deletePayment
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Payment deleted
+  
+  /payments/webhook/:
+    post:
+      tags:
+        - Payments
+      summary: Chapa Payment Webhook
+      description: |
+        Webhook endpoint for Chapa payment verification.
+        Called by Chapa after payment completion.
+        No authentication required.
+      operationId: paymentWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookRequest'
+      responses:
+        '200':
+          description: Payment status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+        '400':
+          description: Invalid transaction reference
