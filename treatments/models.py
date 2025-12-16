@@ -23,7 +23,7 @@ class Treatment(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=['patient'], name='unique_treatment_per_patient')
+            models.UniqueConstraint(fields=['appointment'], name='unique_treatment_per_appointment')
         ]
 
     def __str__(self):

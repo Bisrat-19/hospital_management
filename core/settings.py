@@ -44,6 +44,13 @@ else:
     # Safe defaults for local development when DEBUG may be False
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
+# CORS settings
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
 # Payment / external service configuration
 PAYMENT_RETURN_URL = os.getenv('PAYMENT_RETURN_URL')  
 DEFAULT_PAYMENT_EMAIL = os.getenv('DEFAULT_PAYMENT_EMAIL')  
@@ -60,6 +67,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # third-party
+    'corsheaders',
     'rest_framework',
     'drf_spectacular',
 
@@ -74,6 +82,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',

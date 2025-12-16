@@ -6,6 +6,7 @@ from django.utils import timezone
 from .models import Treatment
 from .serializers import TreatmentSerializer
 from patients.models import Patient
+from django.core.cache import cache
 
 class IsDoctor(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -17,6 +18,16 @@ class TreatmentViewSet(viewsets.ModelViewSet):
     queryset = Treatment.objects.select_related('patient', 'doctor', 'appointment').all()
     serializer_class = TreatmentSerializer
     permission_classes = [permissions.IsAuthenticated, IsDoctor]
+
+    def create(self, request, *args, **kwargs):
+        print("Treatment Create Request Data:", request.data)
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            print("Treatment Create Validation Errors:", serializer.errors)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=201, headers=headers)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -49,11 +60,27 @@ class TreatmentViewSet(viewsets.ModelViewSet):
         # Update patient status to seen
         Patient.objects.filter(pk=instance.patient_id).update(is_seen=True)
 
+        # Invalidate appointment caches
+        cache.delete("appointments_grouped")
+        if initial.appointment_date:
+            date_str = initial.appointment_date.date().isoformat()
+            if initial.doctor_id:
+                cache.delete(f"appointments_today_doctor_{initial.doctor_id}_{date_str}")
+            cache.delete(f"appointments_today_all_{date_str}")
+
     def perform_update(self, serializer):
         instance = serializer.save()
         if instance.follow_up_required is False and instance.appointment and instance.appointment.status != 'completed':
             instance.appointment.status = 'completed'
             instance.appointment.save(update_fields=['status'])
+            
+            # Invalidate appointment caches
+            cache.delete("appointments_grouped")
+            if instance.appointment.appointment_date:
+                date_str = instance.appointment.appointment_date.date().isoformat()
+                if instance.appointment.doctor_id:
+                    cache.delete(f"appointments_today_doctor_{instance.appointment.doctor_id}_{date_str}")
+                cache.delete(f"appointments_today_all_{date_str}")
 
     @action(detail=False, methods=['get'])
     def today(self, request):

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class UserAdminViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated]
     queryset = User.objects.all()
     serializer_class = UserSerializer
     http_method_names = ['get', 'put', 'patch', 'delete']
@@ -58,8 +58,19 @@ class UserAdminViewSet(viewsets.ModelViewSet):
 
         return Response(user_data, status=status.HTTP_200_OK)
 
-    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=False, methods=['get', 'patch'], permission_classes=[permissions.IsAuthenticated])
     def profile(self, request):
+        if request.method == 'PATCH':
+            serializer = UserSerializer(request.user, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                # Invalidate caches
+                cache.delete(f"user_{request.user.id}")
+                cache.delete(f"profile_{request.user.id}")
+                cache.delete("all_users")
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
         cache_key = f"profile_{request.user.id}"
         profile_data = cache.get(cache_key)
 
@@ -73,23 +84,16 @@ class UserAdminViewSet(viewsets.ModelViewSet):
 
         return Response(profile_data, status=status.HTTP_200_OK)
 
-    @action(detail=True,methods=['patch'],url_path='change-password',permission_classes=[permissions.IsAuthenticated])
-    def change_password(self, request, pk=None):
-        try:
-            user = self.get_queryset().get(pk=pk)
-        except User.DoesNotExist:
-            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        if not (request.user.is_staff or request.user.pk == user.pk):
-            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-
+    @action(detail=False, methods=['patch'], url_path='change-password', permission_classes=[permissions.IsAuthenticated])
+    def change_password(self, request):
+        user = request.user
         serializer = ChangePasswordSerializer(data=request.data, context={"request": request, "user": user})
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-        cache.delete(f"user_{pk}")
+        cache.delete(f"user_{user.pk}")
         cache.delete("all_users")
-        cache.delete(f"profile_{pk}")
+        cache.delete(f"profile_{user.pk}")
 
         return Response({"detail": "Password updated successfully"}, status=status.HTTP_200_OK)
 

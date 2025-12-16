@@ -80,6 +80,13 @@ class PatientViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         instance = serializer.save()
         cache.delete("all_patients")
+        
+        # Clear appointment caches since a new appointment is created with the patient
+        cache.delete("appointments_grouped")
+        today = timezone.now().date().isoformat()
+        if instance.assigned_doctor:
+            cache.delete(f"appointments_today_doctor_{instance.assigned_doctor.id}_{today}")
+        cache.delete(f"appointments_today_all_{today}")
     
     def perform_update(self, serializer):
         instance = serializer.save()

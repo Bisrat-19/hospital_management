@@ -57,21 +57,31 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         cache.set(cache_key, payload, timeout=CACHE_TTL)
         return Response(payload)
 
-    @action(detail=False, methods=['get'], permission_classes=[IsDoctor])
+    @action(detail=False, methods=['get'], permission_classes=[IsAdminOrReceptionist | IsDoctor])
     def today(self, request):
         today = timezone.now().date()
-        doctor = request.user
-        cache_key = f"appointments_today_{doctor.id}_{today.isoformat()}"
+        user = request.user
+        
+        # Determine if we are filtering by doctor (for doctors) or showing all (for receptionists)
+        is_doctor = getattr(user, 'role', None) == 'doctor'
+        
+        if is_doctor:
+            cache_key = f"appointments_today_doctor_{user.id}_{today.isoformat()}"
+        else:
+            cache_key = f"appointments_today_all_{today.isoformat()}"
+
         cached = cache.get(cache_key)
         if cached:
-            logger.debug("appointments.today cache hit for doctor=%s", doctor.id)
+            logger.debug("appointments.today cache hit for user=%s", user.id)
             return Response(cached)
 
-        logger.debug("appointments.today cache miss for doctor=%s; rebuilding payload", doctor.id)
-        qs = Appointment.objects.filter(
-            doctor=doctor,
-            appointment_date__date=today
-        ).order_by('appointment_date')
+        logger.debug("appointments.today cache miss for user=%s; rebuilding payload", user.id)
+        
+        qs = Appointment.objects.filter(appointment_date__date=today)
+        if is_doctor:
+            qs = qs.filter(doctor=user)
+            
+        qs = qs.order_by('appointment_date')
         payload = self._build_grouped_payload(qs)
         cache.set(cache_key, payload, timeout=CACHE_TTL)
         return Response(payload)
@@ -108,24 +118,27 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         follow_data = self.get_serializer(follow_qs, many=True).data
         return {'initial': initial_data, 'follow_up': follow_data}
 
+    def _invalidate_today_cache(self, instance):
+        appt_date = getattr(instance, 'appointment_date', None)
+        if appt_date:
+            date_str = appt_date.date().isoformat()
+            # Invalidate doctor specific cache
+            if instance.doctor:
+                cache.delete(f"appointments_today_doctor_{instance.doctor.id}_{date_str}")
+            # Invalidate all appointments cache (for receptionists)
+            cache.delete(f"appointments_today_all_{date_str}")
+
     def perform_create(self, serializer):
         instance = serializer.save()
         cache.delete("appointments_grouped")
-        appt_date = getattr(instance, 'appointment_date', None)
-        if appt_date:
-            cache.delete(f"appointments_today_{instance.doctor.id}_{appt_date.date().isoformat()}")
+        self._invalidate_today_cache(instance)
 
     def perform_update(self, serializer):
         instance = serializer.save()
         cache.delete("appointments_grouped")
-        appt_date = getattr(instance, 'appointment_date', None)
-        if appt_date:
-            cache.delete(f"appointments_today_{instance.doctor.id}_{appt_date.date().isoformat()}")
+        self._invalidate_today_cache(instance)
 
     def perform_destroy(self, instance):
-        appt_date = getattr(instance, 'appointment_date', None)
-        doctor = getattr(instance, 'doctor', None)
         instance.delete()
         cache.delete("appointments_grouped")
-        if doctor and appt_date:
-            cache.delete(f"appointments_today_{doctor.id}_{appt_date.date().isoformat()}")
+        self._invalidate_today_cache(instance)

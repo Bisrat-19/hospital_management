@@ -21,6 +21,13 @@ class TreatmentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at', 'doctor_name', 'patient_name', 'patient', 'doctor']
 
+    def to_representation(self, instance):
+        response = super().to_representation(instance)
+        from patients.serializers import PatientSerializer, DoctorSerializer
+        response['patient'] = PatientSerializer(instance.patient).data
+        response['doctor'] = DoctorSerializer(instance.doctor).data
+        return response
+
     def validate(self, attrs):
         request = self.context.get('request')
         appt = attrs.get('appointment') or getattr(self.instance, 'appointment', None)
