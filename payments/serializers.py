@@ -81,6 +81,11 @@ class PaymentCreateSerializer(serializers.ModelSerializer):
         req = self.context.get("request")
         callback_url = req.build_absolute_uri(reverse("payment-webhook")) if req else ""
         return_url = getattr(settings, "PAYMENT_RETURN_URL", None) or callback_url
+        
+        # Append transaction reference to return URL so we have it when user is redirected
+        if return_url:
+            separator = '&' if '?' in return_url else '?'
+            return_url = f"{return_url}{separator}tx_ref={reference}"
 
         # Always use configured default email; patients may not have email
         default_email = getattr(settings, "DEFAULT_PAYMENT_EMAIL", None)

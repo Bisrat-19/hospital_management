@@ -32,11 +32,39 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return Response({"payment_url": checkout, "reference": payment.reference}, status=status.HTTP_201_CREATED)
         return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=False, methods=["post"], url_path="webhook", url_name="webhook", permission_classes=[permissions.AllowAny])
+    @action(detail=False, methods=["get", "post"], url_path="webhook", url_name="webhook", permission_classes=[permissions.AllowAny])
     def webhook(self, request):
-        serializer = self.get_serializer(data=request.data, context={"request": request})
+        # Handle GET request from Chapa redirect (with query params)
+        if request.method == "GET":
+            # Chapa might use different parameter names
+            tx_ref = (request.query_params.get('trx_ref') or 
+                     request.query_params.get('tx_ref') or
+                     request.query_params.get('reference'))
+            
+            if not tx_ref:
+                # Log available parameters for debugging
+                available_params = dict(request.query_params)
+                return Response({
+                    "error": "Missing transaction reference",
+                    "available_params": available_params
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            data = {'tx_ref': tx_ref}
+        else:
+            # Handle POST request from frontend verification
+            data = request.data
+        
+        serializer = self.get_serializer(data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         payment = serializer.save()
+        
+        # For GET requests (Chapa redirect), redirect to frontend callback page
+        if request.method == "GET":
+            from django.shortcuts import redirect
+            frontend_url = f"http://localhost:5173/payment/callback?tx_ref={payment.reference}&status={payment.status}"
+            return redirect(frontend_url)
+        
+        # For POST requests (frontend verification), return JSON
         return Response({"message": "Payment status updated", "status": payment.status})
 
     @action(detail=False, methods=['get'])
