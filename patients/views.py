@@ -95,9 +95,29 @@ class PatientViewSet(viewsets.ModelViewSet):
 
     def perform_destroy(self, instance):
         pk = instance.pk
-        instance.delete()
+        today = timezone.now().date().isoformat()
+        
+        # Get related appointments before deletion for cache clearing
+        appointments = list(instance.appointments.all())
+        
+        # Clear patient caches
         cache.delete("all_patients")
         cache.delete(f"patient_{pk}")
+        
+        # Clear appointment caches
+        cache.delete("appointments_grouped")
+        for appt in appointments:
+            if appt.doctor:
+                appt_date = appt.appointment_date.date().isoformat()
+                cache.delete(f"appointments_today_doctor_{appt.doctor.id}_{appt_date}")
+        cache.delete(f"appointments_today_all_{today}")
+        
+        # Clear treatment caches (treatments are related to patient via CASCADE)
+        cache.delete("all_treatments")
+        cache.delete(f"treatments_today_{today}")
+        
+        # Now delete the patient (CASCADE will delete appointments, treatments, payments)
+        instance.delete()
 
     @action(detail=False, methods=['get'])
     def today(self, request):

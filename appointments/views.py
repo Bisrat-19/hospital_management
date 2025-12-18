@@ -1,7 +1,8 @@
 import logging
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from django.utils import timezone
 from django.core.cache import cache
 from django.conf import settings
@@ -39,7 +40,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         elif self.action == 'retrieve':
             permission_classes = [IsAdminOrReceptionist | IsDoctor]
         elif self.action == 'destroy':
-            permission_classes = [permissions.IsAdminUser]
+            permission_classes = [IsAdminOrReceptionist]
         else:
             permission_classes = [permissions.IsAuthenticated]
         return [p() for p in permission_classes]
@@ -118,27 +119,52 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         follow_data = self.get_serializer(follow_qs, many=True).data
         return {'initial': initial_data, 'follow_up': follow_data}
 
-    def _invalidate_today_cache(self, instance):
+    def _invalidate_appointment_caches(self, instance):
+        """Invalidate all caches related to an appointment"""
+        # Grouped appointments cache
+        cache.delete("appointments_grouped")
+        
+        # Today's appointments caches
         appt_date = getattr(instance, 'appointment_date', None)
         if appt_date:
             date_str = appt_date.date().isoformat()
-            # Invalidate doctor specific cache
             if instance.doctor:
                 cache.delete(f"appointments_today_doctor_{instance.doctor.id}_{date_str}")
-            # Invalidate all appointments cache (for receptionists)
             cache.delete(f"appointments_today_all_{date_str}")
+
+    @action(detail=True, methods=['patch'], permission_classes=[IsReceptionist])
+    def cancel(self, request, pk=None):
+        """Cancel an appointment (only if patient hasn't been seen)"""
+        appointment = self.get_object()
+        
+        # Check if patient has been seen
+        if appointment.patient.is_seen:
+            return Response(
+                {"error": "Cannot cancel appointment - patient has already been seen"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        appointment.status = 'cancelled'
+        appointment.save()
+        
+        # Invalidate caches
+        self._invalidate_appointment_caches(appointment)
+        
+        return Response(AppointmentSerializer(appointment).data)
 
     def perform_create(self, serializer):
         instance = serializer.save()
-        cache.delete("appointments_grouped")
-        self._invalidate_today_cache(instance)
+        self._invalidate_appointment_caches(instance)
 
     def perform_update(self, serializer):
         instance = serializer.save()
-        cache.delete("appointments_grouped")
-        self._invalidate_today_cache(instance)
+        self._invalidate_appointment_caches(instance)
 
     def perform_destroy(self, instance):
+        # Check if patient has been seen (for receptionists)
+        if hasattr(self.request.user, 'role') and self.request.user.role == 'receptionist':
+            if instance.patient.is_seen:
+                raise PermissionDenied("Cannot delete appointment - patient has already been seen")
+        
+        self._invalidate_appointment_caches(instance)
         instance.delete()
-        cache.delete("appointments_grouped")
-        self._invalidate_today_cache(instance)

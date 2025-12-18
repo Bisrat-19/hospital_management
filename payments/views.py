@@ -2,6 +2,7 @@ from rest_framework import status, permissions, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
+from django.conf import settings
 from .models import Payment
 from .serializers import PaymentSerializer, PaymentCreateSerializer, PaymentWebhookSerializer
 
@@ -61,7 +62,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
         # For GET requests (Chapa redirect), redirect to frontend callback page
         if request.method == "GET":
             from django.shortcuts import redirect
-            frontend_url = f"http://localhost:5173/payment/callback?tx_ref={payment.reference}&status={payment.status}"
+            # Use configured return URL or fallback to localhost for development
+            return_url = getattr(settings, 'PAYMENT_RETURN_URL', None) or 'http://localhost:5173/payment/callback'
+            # Ensure the URL doesn't already have query params
+            separator = '&' if '?' in return_url else '?'
+            frontend_url = f"{return_url}{separator}tx_ref={payment.reference}&status={payment.status}"
             return redirect(frontend_url)
         
         # For POST requests (frontend verification), return JSON
