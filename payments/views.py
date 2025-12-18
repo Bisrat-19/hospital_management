@@ -7,10 +7,14 @@ from .models import Payment
 from .serializers import PaymentSerializer, PaymentCreateSerializer, PaymentWebhookSerializer
 
 
-class PaymentViewSet(viewsets.ModelViewSet):
+from core.mixins import CacheResponseMixin
+
+
+class PaymentViewSet(CacheResponseMixin, viewsets.ModelViewSet):
     queryset = Payment.objects.all().select_related('patient')
     serializer_class = PaymentSerializer
     permission_classes = [permissions.IsAuthenticated]
+    cache_key_prefix = "payment"
 
     def get_permissions(self):
         if self.action == 'webhook':
@@ -35,15 +39,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get", "post"], url_path="webhook", url_name="webhook", permission_classes=[permissions.AllowAny])
     def webhook(self, request):
-        # Handle GET request from Chapa redirect (with query params)
         if request.method == "GET":
-            # Chapa might use different parameter names
             tx_ref = (request.query_params.get('trx_ref') or 
                      request.query_params.get('tx_ref') or
                      request.query_params.get('reference'))
             
             if not tx_ref:
-                # Log available parameters for debugging
                 available_params = dict(request.query_params)
                 return Response({
                     "error": "Missing transaction reference",
@@ -52,24 +53,19 @@ class PaymentViewSet(viewsets.ModelViewSet):
             
             data = {'tx_ref': tx_ref}
         else:
-            # Handle POST request from frontend verification
             data = request.data
         
         serializer = self.get_serializer(data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         payment = serializer.save()
         
-        # For GET requests (Chapa redirect), redirect to frontend callback page
         if request.method == "GET":
             from django.shortcuts import redirect
-            # Use configured return URL or fallback to localhost for development
             return_url = getattr(settings, 'PAYMENT_RETURN_URL', None) or 'http://localhost:5173/payment/callback'
-            # Ensure the URL doesn't already have query params
             separator = '&' if '?' in return_url else '?'
             frontend_url = f"{return_url}{separator}tx_ref={payment.reference}&status={payment.status}"
             return redirect(frontend_url)
         
-        # For POST requests (frontend verification), return JSON
         return Response({"message": "Payment status updated", "status": payment.status})
 
     @action(detail=False, methods=['get'])

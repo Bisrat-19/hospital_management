@@ -10,6 +10,9 @@ from .models import Appointment
 from .serializers import AppointmentSerializer
 
 
+from core.mixins import CacheResponseMixin, CacheInvalidationMixin
+
+
 CACHE_TTL = getattr(settings, 'CACHE_TTL', 300)
 logger = logging.getLogger(__name__)
 
@@ -28,13 +31,14 @@ class IsAdminOrReceptionist(permissions.BasePermission):
         return request.user.is_authenticated and getattr(request.user, 'role', None) in ['admin', 'receptionist']
 
 
-class AppointmentViewSet(viewsets.ModelViewSet):
+class AppointmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.ModelViewSet):
     queryset = Appointment.objects.all().order_by('-appointment_date')
     serializer_class = AppointmentSerializer
+    cache_key_prefix = "appointment"
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update']:
-            permission_classes = [IsDoctor]  # Doctor creates follow-ups
+            permission_classes = [IsDoctor]  
         elif self.action in ['list']:
             permission_classes = [IsAdminOrReceptionist | IsDoctor]
         elif self.action == 'retrieve':
@@ -46,7 +50,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         return [p() for p in permission_classes]
 
     def list(self, request, *args, **kwargs):
-        cache_key = "appointments_grouped"
+        cache_key = "all_appointments" 
         cached = cache.get(cache_key)
         if cached:
             logger.debug("appointments.list cache hit")
@@ -62,8 +66,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     def today(self, request):
         today = timezone.now().date()
         user = request.user
-        
-        # Determine if we are filtering by doctor (for doctors) or showing all (for receptionists)
         is_doctor = getattr(user, 'role', None) == 'doctor'
         
         if is_doctor:
@@ -87,31 +89,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         cache.set(cache_key, payload, timeout=CACHE_TTL)
         return Response(payload)
 
-    @action(detail=False, methods=['get'], permission_classes=[IsDoctor], url_path='today/Initial')
-    def today_initial(self, request):
-        today = timezone.now().date()
-        doctor = request.user
-        qs = Appointment.objects.filter(
-            doctor=doctor,
-            appointment_date__date=today,
-            appointment_type='initial'
-        ).order_by('appointment_date')
-        serializer = self.get_serializer(qs, many=True)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'], permission_classes=[IsDoctor], url_path='today/followup')
-    def today_followup(self, request):
-        today = timezone.now().date()
-        doctor = request.user
-        
-        qs = Appointment.objects.filter(
-            doctor=doctor,
-            appointment_date__date=today,
-            appointment_type='follow_up'
-        ).order_by('appointment_date')
-        serializer = self.get_serializer(qs, many=True)
-        return Response(serializer.data)
-
     def _build_grouped_payload(self, qs):
         initial_qs = qs.filter(appointment_type='initial')
         follow_qs = qs.filter(appointment_type='follow_up')
@@ -119,25 +96,20 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         follow_data = self.get_serializer(follow_qs, many=True).data
         return {'initial': initial_data, 'follow_up': follow_data}
 
-    def _invalidate_appointment_caches(self, instance):
-        """Invalidate all caches related to an appointment"""
-        # Grouped appointments cache
-        cache.delete("appointments_grouped")
-        
-        # Today's appointments caches
+    def get_cache_keys_to_invalidate(self, instance):
+        keys = ["all_appointments"]
         appt_date = getattr(instance, 'appointment_date', None)
         if appt_date:
             date_str = appt_date.date().isoformat()
             if instance.doctor:
-                cache.delete(f"appointments_today_doctor_{instance.doctor.id}_{date_str}")
-            cache.delete(f"appointments_today_all_{date_str}")
+                keys.append(f"appointments_today_doctor_{instance.doctor.id}_{date_str}")
+            keys.append(f"appointments_today_all_{date_str}")
+        return keys
 
     @action(detail=True, methods=['patch'], permission_classes=[IsReceptionist])
     def cancel(self, request, pk=None):
-        """Cancel an appointment (only if patient hasn't been seen)"""
         appointment = self.get_object()
         
-        # Check if patient has been seen
         if appointment.patient.is_seen:
             return Response(
                 {"error": "Cannot cancel appointment - patient has already been seen"},
@@ -147,24 +119,13 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appointment.status = 'cancelled'
         appointment.save()
         
-        # Invalidate caches
-        self._invalidate_appointment_caches(appointment)
+        self._invalidate_cache(appointment)
         
         return Response(AppointmentSerializer(appointment).data)
 
-    def perform_create(self, serializer):
-        instance = serializer.save()
-        self._invalidate_appointment_caches(instance)
-
-    def perform_update(self, serializer):
-        instance = serializer.save()
-        self._invalidate_appointment_caches(instance)
-
     def perform_destroy(self, instance):
-        # Check if patient has been seen (for receptionists)
         if hasattr(self.request.user, 'role') and self.request.user.role == 'receptionist':
             if instance.patient.is_seen:
                 raise PermissionDenied("Cannot delete appointment - patient has already been seen")
         
-        self._invalidate_appointment_caches(instance)
-        instance.delete()
+        super().perform_destroy(instance)

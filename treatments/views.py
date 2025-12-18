@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
@@ -6,7 +6,7 @@ from django.utils import timezone
 from .models import Treatment
 from .serializers import TreatmentSerializer
 from patients.models import Patient
-from django.core.cache import cache
+from core.mixins import CacheResponseMixin, CacheInvalidationMixin
 
 class IsDoctor(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -14,20 +14,18 @@ class IsDoctor(permissions.BasePermission):
             return request.user.is_authenticated
         return getattr(request.user, 'role', None) == 'doctor'
 
-class TreatmentViewSet(viewsets.ModelViewSet):
+class TreatmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.ModelViewSet):
     queryset = Treatment.objects.select_related('patient', 'doctor', 'appointment').all()
     serializer_class = TreatmentSerializer
     permission_classes = [permissions.IsAuthenticated, IsDoctor]
+    cache_key_prefix = "treatment"
 
     def create(self, request, *args, **kwargs):
-        print("Treatment Create Request Data:", request.data)
         serializer = self.get_serializer(data=request.data)
-        if not serializer.is_valid():
-            print("Treatment Create Validation Errors:", serializer.errors)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=201, headers=headers)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -35,6 +33,20 @@ class TreatmentViewSet(viewsets.ModelViewSet):
         if getattr(user, 'role', None) == 'doctor':
             qs = qs.filter(doctor=user)
         return qs
+
+    def get_cache_keys_to_invalidate(self, instance):
+        keys = ["all_treatments", "all_appointments"]
+        today = timezone.now().date().isoformat()
+        keys.append(f"treatments_today_{today}")
+        
+        if instance.appointment:
+            appt = instance.appointment
+            if appt.appointment_date:
+                date_str = appt.appointment_date.date().isoformat()
+                if appt.doctor_id:
+                    keys.append(f"appointments_today_doctor_{appt.doctor_id}_{date_str}")
+                keys.append(f"appointments_today_all_{date_str}")
+        return keys
 
     def perform_create(self, serializer):
         initial = serializer.validated_data.pop('_resolved_initial_appointment', None)
@@ -57,16 +69,9 @@ class TreatmentViewSet(viewsets.ModelViewSet):
             initial.status = 'completed'
             initial.save(update_fields=['status'])
 
-        # Update patient status to seen
         Patient.objects.filter(pk=instance.patient_id).update(is_seen=True)
-
-        # Invalidate appointment caches
-        cache.delete("appointments_grouped")
-        if initial.appointment_date:
-            date_str = initial.appointment_date.date().isoformat()
-            if initial.doctor_id:
-                cache.delete(f"appointments_today_doctor_{initial.doctor_id}_{date_str}")
-            cache.delete(f"appointments_today_all_{date_str}")
+        
+        self._invalidate_cache(instance)
 
     def perform_update(self, serializer):
         instance = serializer.save()
@@ -74,14 +79,8 @@ class TreatmentViewSet(viewsets.ModelViewSet):
             instance.appointment.status = 'completed'
             instance.appointment.save(update_fields=['status'])
             
-            # Invalidate appointment caches
-            cache.delete("appointments_grouped")
-            if instance.appointment.appointment_date:
-                date_str = instance.appointment.appointment_date.date().isoformat()
-                if instance.appointment.doctor_id:
-                    cache.delete(f"appointments_today_doctor_{instance.appointment.doctor_id}_{date_str}")
-                cache.delete(f"appointments_today_all_{date_str}")
-
+        self._invalidate_cache(instance)
+        
     @action(detail=False, methods=['get'])
     def today(self, request):
         today = timezone.now().date()

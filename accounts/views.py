@@ -6,57 +6,23 @@ from django.core.cache import cache
 from django.conf import settings
 from .serializers import UserSerializer, RegisterSerializer, LoginSerializer, ChangePasswordSerializer
 from .models import User
+from core.mixins import CacheResponseMixin
 
 CACHE_TTL = getattr(settings, 'CACHE_TTL', 300)
 logger = logging.getLogger(__name__)
 
 
-class UserAdminViewSet(viewsets.ModelViewSet):
+class UserAdminViewSet(CacheResponseMixin, viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     queryset = User.objects.all()
     serializer_class = UserSerializer
     http_method_names = ['get', 'put', 'patch', 'delete']
+    cache_key_prefix = "user"
 
     def get_serializer_class(self):
         if self.action in ['update', 'partial_update']:
             return RegisterSerializer
         return UserSerializer
-
-    # GET all users (cached)
-    def list(self, request, *args, **kwargs):
-        cache_key = "all_users"
-        users = cache.get(cache_key)
-
-        if not users:
-            queryset = self.get_queryset()
-            serializer = self.get_serializer(queryset, many=True)
-            users = serializer.data
-            cache.set(cache_key, users, timeout=CACHE_TTL)
-            logger.debug("accounts.users.list cache miss; cached %d users", len(users))
-        else:
-            logger.debug("accounts.users.list cache hit")
-
-        return Response(users, status=status.HTTP_200_OK)
-
-    # GET single user by ID (cached)
-    def retrieve(self, request, pk=None):
-        cache_key = f"user_{pk}"
-        user_data = cache.get(cache_key)
-
-        if not user_data:
-            try:
-                user = self.get_queryset().get(pk=pk)
-            except User.DoesNotExist:
-                return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
-
-            serializer = self.get_serializer(user)
-            user_data = serializer.data
-            cache.set(cache_key, user_data, timeout=CACHE_TTL)
-            logger.debug("accounts.users.retrieve cache miss for id=%s", pk)
-        else:
-            logger.debug("accounts.users.retrieve cache hit for id=%s", pk)
-
-        return Response(user_data, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get', 'patch'], permission_classes=[permissions.IsAuthenticated])
     def profile(self, request):
@@ -64,14 +30,10 @@ class UserAdminViewSet(viewsets.ModelViewSet):
             serializer = UserSerializer(request.user, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
-                # Invalidate caches
-                cache.delete(f"user_{request.user.id}")
-                cache.delete(f"profile_{request.user.id}")
-                cache.delete("all_users")
+                self._invalidate_cache(request.user)
                 return Response(serializer.data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        cache_key = f"profile_{request.user.id}"
         profile_data = cache.get(cache_key)
 
         if not profile_data:
@@ -91,23 +53,18 @@ class UserAdminViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-        cache.delete(f"user_{user.pk}")
-        cache.delete("all_users")
-        cache.delete(f"profile_{user.pk}")
+        self._invalidate_cache(user)
 
         return Response({"detail": "Password updated successfully"}, status=status.HTTP_200_OK)
 
-    # Clear cache when updating or deleting a user
     def perform_update(self, serializer):
         instance = serializer.save()
-        cache.delete(f"user_{instance.pk}")
-        cache.delete("all_users")
+        self._invalidate_cache(instance)
 
     def perform_destroy(self, instance):
         pk = instance.pk
         instance.delete()
-        cache.delete(f"user_{pk}")
-        cache.delete("all_users")
+        self._invalidate_cache(instance)
 
 class AuthViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAdminUser])
@@ -115,8 +72,7 @@ class AuthViewSet(viewsets.ViewSet):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            # Clear user list cache when new user is created
-            cache.delete("all_users")
+            self._invalidate_cache(user)
             return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
