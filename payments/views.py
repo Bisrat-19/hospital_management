@@ -4,8 +4,10 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.conf import settings
 from django.shortcuts import redirect
+from django.db.models import Sum
 from .models import Payment
 from .serializers import PaymentSerializer, PaymentCreateSerializer, PaymentWebhookSerializer
+from .permissions import IsAdminOrReceptionist
 from core.mixins import CacheResponseMixin, CacheInvalidationMixin
 
 
@@ -75,3 +77,14 @@ class PaymentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.ModelV
         queryset = self.get_queryset().filter(created_at__date=today_date)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAdminOrReceptionist])
+    def total_amount(self, request):
+        total = Payment.objects.filter(status='paid').aggregate(Sum('amount'))['amount__sum'] or 0
+        return Response({"total_amount": float(total)})
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAdminOrReceptionist])
+    def today_total(self, request):
+        today_date = timezone.now().date()
+        total = Payment.objects.filter(status='paid', created_at__date=today_date).aggregate(Sum('amount'))['amount__sum'] or 0
+        return Response({"today_total": float(total)})

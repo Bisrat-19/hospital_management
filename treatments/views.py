@@ -19,7 +19,9 @@ class TreatmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.Mode
         qs = super().get_queryset()
         user = self.request.user
         if getattr(user, 'role', None) == 'doctor':
-            qs = qs.filter(doctor=user)
+            from django.utils import timezone
+            today = timezone.now().date()
+            qs = qs.filter(doctor=user, created_at__date=today)
         return qs
 
     def get_cache_keys_to_invalidate(self, instance):
