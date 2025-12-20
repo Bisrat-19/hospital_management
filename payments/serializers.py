@@ -52,70 +52,41 @@ class PaymentCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Patient already has a successful payment")
         return value
 
-    def create(self, validated):
-        patient = Patient.objects.get(id=validated.pop("patient_id"))
-        if Payment.objects.filter(patient=patient, status='paid').exists():
-            raise serializers.ValidationError("Patient already has a successful payment")
-        method = validated.get("payment_method")
+    def create(self, validated_data):
+        patient = Patient.objects.get(id=validated_data.pop("patient_id"))
         reference = str(uuid.uuid4())
         payment = Payment.objects.create(
             patient=patient,
-            amount=validated["amount"],
-            payment_method=method,
+            amount=validated_data["amount"],
+            payment_method=validated_data["payment_method"],
             reference=reference,
             status='pending'
         )
+        
         self._checkout_url = None
-        if method == "cash":
+        if payment.payment_method == "cash":
             payment.status = "paid"
             payment.save(update_fields=["status", "updated_at"])
             return payment
 
-        # chapa flow
+        return self._initialize_chapa_payment(payment)
+
+    def _initialize_chapa_payment(self, payment):
         secret_key = get_chapa_secret_key()
         if not secret_key:
             payment.status = "failed"
             payment.save(update_fields=["status", "updated_at"])
-            raise ServerConfigError("CHAPA_SECRET_KEY not configured (load .env or set in settings)")
+            raise ServerConfigError("CHAPA_SECRET_KEY not configured")
 
-        req = self.context.get("request")
-        callback_url = req.build_absolute_uri(reverse("payment-webhook")) if req else ""
-        return_url = getattr(settings, "PAYMENT_RETURN_URL", None) or callback_url
-        
-        # Append transaction reference to return URL so we have it when user is redirected
-        if return_url:
-            separator = '&' if '?' in return_url else '?'
-            return_url = f"{return_url}{separator}tx_ref={reference}"
-
-        # Always use configured default email; patients may not have email
-        default_email = getattr(settings, "DEFAULT_PAYMENT_EMAIL", None)
-        if not default_email or "@" not in default_email:
-            raise ServerConfigError("DEFAULT_PAYMENT_EMAIL not configured or invalid")
-        email = default_email
-
-        title = "Card Payment"[:16]
-        payload = {
-            "amount": str(payment.amount),
-            "currency": "ETB",
-            "email": email,
-            "first_name": getattr(patient, "first_name", "") or "",
-            "last_name": getattr(patient, "last_name", "") or "",
-            "tx_ref": reference,
-            "callback_url": callback_url,
-            "return_url": return_url,
-            "customization": {"title": title},
-        }
-
+        payload = self._build_chapa_payload(payment)
         headers = {
             "Authorization": f"Bearer {secret_key}",
             "Content-Type": "application/json",
         }
+
         try:
             resp = requests.post(CHAPA_INITIALIZE_URL, json=payload, headers=headers, timeout=20)
-            try:
-                data = resp.json()
-            except ValueError:
-                data = {"status": "error", "message": resp.text}
+            data = resp.json() if resp.status_code == 200 else {"status": "error", "message": resp.text}
         except Exception:
             payment.status = "failed"
             payment.save(update_fields=["status", "updated_at"])
@@ -125,19 +96,39 @@ class PaymentCreateSerializer(serializers.ModelSerializer):
             self._checkout_url = data["data"]["checkout_url"]
             return payment
 
-        error_fields = data.get("data") if isinstance(data.get("data"), dict) else {}
-        gateway_msg = data.get("message") or "Failed to initialize Chapa payment"
         payment.status = "failed"
         payment.save(update_fields=["status", "updated_at"])
-        if error_fields:
-            raise serializers.ValidationError(error_fields)
-        raise serializers.ValidationError({"detail": gateway_msg})
+        raise serializers.ValidationError(data.get("message") or "Failed to initialize Chapa payment")
+
+    def _build_chapa_payload(self, payment):
+        req = self.context.get("request")
+        callback_url = req.build_absolute_uri(reverse("payment-webhook")) if req else ""
+        return_url = getattr(settings, "PAYMENT_RETURN_URL", None) or callback_url
+        
+        if return_url:
+            separator = '&' if '?' in return_url else '?'
+            return_url = f"{return_url}{separator}tx_ref={payment.reference}"
+
+        email = getattr(settings, "DEFAULT_PAYMENT_EMAIL", None)
+        if not email or "@" not in email:
+            raise ServerConfigError("DEFAULT_PAYMENT_EMAIL not configured")
+
+        return {
+            "amount": str(payment.amount),
+            "currency": "ETB",
+            "email": email,
+            "first_name": payment.patient.first_name or "",
+            "last_name": payment.patient.last_name or "",
+            "tx_ref": payment.reference,
+            "callback_url": callback_url,
+            "return_url": return_url,
+            "customization": {"title": "Card Payment"[:16]},
+        }
 
     def get_payment_url(self, obj):
         return getattr(self, "_checkout_url", None)
 
     def build_response(self, payment):
-        # Centralized payment response used by patient serializer
         data = {
             "id": payment.id,
             "amount": str(payment.amount),
@@ -162,17 +153,17 @@ class PaymentWebhookSerializer(serializers.Serializer):
     def save(self, **kwargs):
         secret_key = get_chapa_secret_key()
         if not secret_key:
-            raise ServerConfigError("CHAPA_SECRET_KEY not configured (load .env or set in settings)")
+            raise ServerConfigError("CHAPA_SECRET_KEY not configured")
+            
         tx_ref = self.validated_data["tx_ref"]
         payment = Payment.objects.get(reference=tx_ref)
-        headers = {
-            "Authorization": f"Bearer {secret_key}",
-        }
+        
         try:
-            resp = requests.get(CHAPA_VERIFY_URL.format(tx_ref), headers=headers, timeout=20)
+            resp = requests.get(CHAPA_VERIFY_URL.format(tx_ref), headers={"Authorization": f"Bearer {secret_key}"}, timeout=20)
             data = resp.json()
         except Exception:
             raise serializers.ValidationError("Verification request failed")
+            
         status_value = (data or {}).get("status")
         is_paid = status_value == "success" and (data.get("data") or {}).get("tx_ref") == tx_ref
         payment.status = "paid" if is_paid else "failed"

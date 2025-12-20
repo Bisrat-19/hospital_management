@@ -5,27 +5,15 @@ from rest_framework.exceptions import ValidationError
 from django.utils import timezone
 from .models import Treatment
 from .serializers import TreatmentSerializer
+from .permissions import IsDoctor
 from patients.models import Patient
 from core.mixins import CacheResponseMixin, CacheInvalidationMixin
-
-class IsDoctor(permissions.BasePermission):
-    def has_permission(self, request, view):
-        if request.method in permissions.SAFE_METHODS:
-            return request.user.is_authenticated
-        return getattr(request.user, 'role', None) == 'doctor'
 
 class TreatmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.ModelViewSet):
     queryset = Treatment.objects.select_related('patient', 'doctor', 'appointment').all()
     serializer_class = TreatmentSerializer
     permission_classes = [permissions.IsAuthenticated, IsDoctor]
     cache_key_prefix = "treatment"
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -40,24 +28,20 @@ class TreatmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.Mode
         keys.append(f"treatments_today_{today}")
         
         if instance.appointment:
-            appt = instance.appointment
-            if appt.appointment_date:
-                date_str = appt.appointment_date.date().isoformat()
-                if appt.doctor_id:
-                    keys.append(f"appointments_today_doctor_{appt.doctor_id}_{date_str}")
-                keys.append(f"appointments_today_all_{date_str}")
+            self._add_appointment_cache_keys(instance.appointment, keys)
         return keys
+
+    def _add_appointment_cache_keys(self, appt, keys):
+        if appt.appointment_date:
+            date_str = appt.appointment_date.date().isoformat()
+            if appt.doctor_id:
+                keys.append(f"appointments_today_doctor_{appt.doctor_id}_{date_str}")
+            keys.append(f"appointments_today_all_{date_str}")
 
     def perform_create(self, serializer):
         initial = serializer.validated_data.pop('_resolved_initial_appointment', None)
         if not initial:
             raise ValidationError({"appointment": "Could not resolve initial appointment."})
-
-        if Treatment.objects.filter(appointment=initial).exists():
-            raise ValidationError({"appointment": "A treatment already exists for this initial appointment. Update it instead."})
-
-        if initial.doctor_id != self.request.user.id:
-            raise ValidationError({"appointment": "You can only create treatments for your own appointments."})
 
         instance = serializer.save(
             doctor=self.request.user,
@@ -65,13 +49,15 @@ class TreatmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.Mode
             appointment=initial
         )
 
-        if instance.follow_up_required is False and initial.status != 'completed':
-            initial.status = 'completed'
-            initial.save(update_fields=['status'])
+        self._update_related_models(instance, initial)
+        self._invalidate_cache(instance)
+
+    def _update_related_models(self, instance, appointment):
+        if instance.follow_up_required is False and appointment.status != 'completed':
+            appointment.status = 'completed'
+            appointment.save(update_fields=['status'])
 
         Patient.objects.filter(pk=instance.patient_id).update(is_seen=True)
-        
-        self._invalidate_cache(instance)
 
     def perform_update(self, serializer):
         instance = serializer.save()
@@ -83,7 +69,7 @@ class TreatmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.Mode
         
     @action(detail=False, methods=['get'])
     def today(self, request):
-        today = timezone.now().date()
-        queryset = self.get_queryset().filter(created_at__date=today)
+        today_date = timezone.now().date()
+        queryset = self.get_queryset().filter(created_at__date=today_date)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)

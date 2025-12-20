@@ -18,27 +18,17 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ['username', 'first_name', 'last_name', 'email', 'password', 'role']
 
     def create(self, validated_data):
-        user = User.objects.create_user(
-            username=validated_data['username'],
-            password=validated_data['password'],
-            first_name=validated_data.get('first_name', ''),
-            last_name=validated_data.get('last_name', ''),
-            email=validated_data.get('email', ''),
-            role=validated_data['role'],
-        )
-        return user
+        return User.objects.create_user(**validated_data)
 
     def update(self, instance, validated_data):
         password = validated_data.pop('password', None)
-
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        instance.save()
-
+        
         if password:
             instance.set_password(password)
-            instance.save()
-
+        
+        instance.save()
         return instance
 
 class LoginSerializer(serializers.Serializer):
@@ -46,23 +36,30 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
     def validate(self, data):
-        user = authenticate(username=data['username'], password=data['password'])
-        if user and user.is_active:
-            self.user = user
-            refresh = RefreshToken.for_user(user)
-            self.tokens = {
+        user = authenticate(username=data.get('username'), password=data.get('password'))
+        if not user or not user.is_active:
+            raise serializers.ValidationError("Invalid credentials")
+        
+        refresh = RefreshToken.for_user(user)
+        return {
+            'user': user,
+            'tokens': {
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
             }
-            return {'user': user}
-        raise serializers.ValidationError("Invalid credentials")
+        }
 
     def get_token_data(self):
-        user_data = UserSerializer(self.user).data if hasattr(self, 'user') else None
+        if not hasattr(self, 'validated_data'):
+            return None
+            
+        user = self.validated_data['user']
+        tokens = self.validated_data['tokens']
+        
         return {
-            'refresh': self.tokens.get('refresh') if hasattr(self, 'tokens') else None,
-            'access': self.tokens.get('access') if hasattr(self, 'tokens') else None,
-            'user': user_data,
+            'refresh': tokens['refresh'],
+            'access': tokens['access'],
+            'user': UserSerializer(user).data,
         }
 
 class ChangePasswordSerializer(serializers.Serializer):
@@ -72,10 +69,8 @@ class ChangePasswordSerializer(serializers.Serializer):
     def validate(self, attrs):
         user = self.context.get('user')
         new_password = attrs.get('new_password')
-        confirm_password = attrs.get('confirm_password', None)
+        confirm_password = attrs.get('confirm_password')
 
-        if not new_password:
-            raise serializers.ValidationError({"new_password": "This field is required."})
         if confirm_password is not None and new_password != confirm_password:
             raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
 
@@ -83,6 +78,7 @@ class ChangePasswordSerializer(serializers.Serializer):
             validate_password(new_password, user=user)
         except ValidationError as e:
             raise serializers.ValidationError({"new_password": list(e.messages)})
+            
         return attrs
 
     def save(self, **kwargs):

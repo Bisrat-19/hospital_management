@@ -41,49 +41,54 @@ class PatientSerializer(serializers.ModelSerializer):
         phone = attrs.get('contact_number') or (self.instance.contact_number if self.instance else None)
 
         if first_name and last_name and phone:
-            qs = Patient.objects.filter(
-                first_name__iexact=first_name.strip(),
-                last_name__iexact=last_name.strip(),
-                contact_number=phone
-            )
-            if self.instance:
-                qs = qs.exclude(pk=self.instance.pk)
-            if qs.exists():
-                raise serializers.ValidationError("Patient already exists.")
+            self._validate_unique_patient(first_name, last_name, phone)
+            
         return attrs
+
+    def _validate_unique_patient(self, first_name, last_name, phone):
+        qs = Patient.objects.filter(
+            first_name__iexact=first_name.strip(),
+            last_name__iexact=last_name.strip(),
+            contact_number=phone
+        )
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("Patient already exists.")
 
     def create(self, validated_data):
         payment_method = validated_data.pop('payment_method')
         amount = validated_data.pop('amount', None)
 
-        if 'assigned_doctor' not in validated_data or validated_data['assigned_doctor'] is None:
-            doctor = User.objects.filter(role='doctor').first()
-            validated_data['assigned_doctor'] = doctor
-
+        if not validated_data.get('assigned_doctor'):
+            validated_data['assigned_doctor'] = User.objects.filter(role='doctor').first()
 
         with transaction.atomic():
             patient = super().create(validated_data)
+            self._create_initial_appointment(patient)
+            self._process_initial_payment(patient, amount, payment_method)
 
-            Appointment.objects.create(
-                patient=patient,
-                doctor=patient.assigned_doctor,
-                appointment_date=timezone.now(),
-                appointment_type='initial',
-                notes='Initial consultation upon registration.'
-            )
-
-            pay_input = {
-                "patient_id": patient.id,
-                "amount": str(amount),
-                "payment_method": payment_method,
-            }
-            pay_serializer = PaymentCreateSerializer(data=pay_input, context=self.context)
-            pay_serializer.is_valid(raise_exception=True)
-            payment = pay_serializer.save()
-
-        # Use centralized payment response from payments app
-        self._payment_info = pay_serializer.build_response(payment)
         return patient
+
+    def _create_initial_appointment(self, patient):
+        Appointment.objects.create(
+            patient=patient,
+            doctor=patient.assigned_doctor,
+            appointment_date=timezone.now(),
+            appointment_type='initial',
+            notes='Initial consultation upon registration.'
+        )
+
+    def _process_initial_payment(self, patient, amount, payment_method):
+        pay_input = {
+            "patient_id": patient.id,
+            "amount": str(amount),
+            "payment_method": payment_method,
+        }
+        pay_serializer = PaymentCreateSerializer(data=pay_input, context=self.context)
+        pay_serializer.is_valid(raise_exception=True)
+        payment = pay_serializer.save()
+        self._payment_info = pay_serializer.build_response(payment)
 
     def update(self, instance, validated_data):
         assigned_doctor = validated_data.pop('assigned_doctor', None)
