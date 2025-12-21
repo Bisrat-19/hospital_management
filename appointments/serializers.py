@@ -101,3 +101,12 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if validated_data.get('appointment_type') == 'follow_up':
             validated_data['status'] = 'pending'
         return super().create(validated_data)
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        # If it's an initial appointment and has a treatment, include its ID
+        if instance.appointment_type == 'initial' and not rep.get('treatment'):
+            treatment = instance.treatments.first()
+            if treatment:
+                rep['treatment'] = treatment.id
+        return rep

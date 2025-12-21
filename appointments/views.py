@@ -31,14 +31,24 @@ class AppointmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.Mo
             permission_classes = [permissions.IsAuthenticated]
         return [p() for p in permission_classes]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if getattr(user, 'role', None) == 'doctor':
+            qs = qs.filter(doctor=user)
+        return qs
+
     def list(self, request, *args, **kwargs):
-        cache_key = "all_appointments"
+        user = request.user
+        is_doctor = getattr(user, 'role', None) == 'doctor'
+        cache_key = f"appointments_list_{'doctor_' + str(user.id) if is_doctor else 'all'}"
+        
         cached = cache.get(cache_key)
         if cached:
-            logger.debug("appointments.list cache hit")
+            logger.debug("appointments.list cache hit for user=%s", user.id)
             return Response(cached)
 
-        logger.debug("appointments.list cache miss; rebuilding payload")
+        logger.debug("appointments.list cache miss for user=%s; rebuilding payload", user.id)
         qs = self.get_queryset()
         payload = self._build_grouped_payload(qs)
         cache.set(cache_key, payload, timeout=CACHE_TTL)
@@ -59,10 +69,7 @@ class AppointmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.Mo
 
         logger.debug("appointments.today cache miss for user=%s; rebuilding payload", user.id)
         
-        qs = Appointment.objects.filter(appointment_date__date=today_date)
-        if is_doctor:
-            qs = qs.filter(doctor=user)
-            
+        qs = self.get_queryset().filter(appointment_date__date=today_date)
         qs = qs.order_by('appointment_date')
         payload = self._build_grouped_payload(qs)
         cache.set(cache_key, payload, timeout=CACHE_TTL)
@@ -77,7 +84,10 @@ class AppointmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.Mo
         }
 
     def get_cache_keys_to_invalidate(self, instance):
-        keys = ["all_appointments"]
+        keys = ["all_appointments", "appointments_list_all"]
+        if instance.doctor:
+            keys.append(f"appointments_list_doctor_{instance.doctor.id}")
+
         appt_date = getattr(instance, 'appointment_date', None)
         if appt_date:
             date_str = appt_date.date().isoformat()

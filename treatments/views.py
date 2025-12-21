@@ -25,7 +25,10 @@ class TreatmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.Mode
         return qs
 
     def get_cache_keys_to_invalidate(self, instance):
-        keys = ["all_treatments", "all_appointments"]
+        keys = ["all_treatments", "all_appointments", "appointments_list_all"]
+        if instance.doctor_id:
+            keys.append(f"appointments_list_doctor_{instance.doctor_id}")
+            
         today = timezone.now().date().isoformat()
         keys.append(f"treatments_today_{today}")
         
