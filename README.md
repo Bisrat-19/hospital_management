@@ -8,7 +8,6 @@ This document provides a summary of all the documentation and API specification 
 ## Deliverables
 
 ### 1. **PROJECT_DOCUMENTATION.md**
-**Location**: `/home/bisrat/.gemini/antigravity/brain/03b122b9-e68a-4004-a827-19a45153e481/PROJECT_DOCUMENTATION.md`
 
 **Purpose**: Comprehensive project documentation that you can share with anyone who needs to understand the system.
 
@@ -32,7 +31,6 @@ This document provides a summary of all the documentation and API specification 
 ---
 
 ### 2. **openapi-spec.yaml**
-**Location**: `/home/bisrat/.gemini/antigravity/brain/03b122b9-e68a-4004-a827-19a45153e481/openapi-spec.yaml`
 
 **Purpose**: Handcrafted OpenAPI 3.0 specification for your API.
 
@@ -58,7 +56,6 @@ This document provides a summary of all the documentation and API specification 
 ---
 
 ### 3. **hospital_schema_auto_generated.yaml**
-**Location**: `/home/bisrat/.gemini/antigravity/brain/03b122b9-e68a-4004-a827-19a45153e481/hospital_schema_auto_generated.yaml`
 
 **Purpose**: Auto-generated OpenAPI schema directly from your Django project using drf-spectacular.
 
