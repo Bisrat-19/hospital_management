@@ -167,7 +167,13 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
 }
 
-REDIS_URL = os.getenv('CACHE_URL') or os.getenv('REDIS_URL') or 'redis://127.0.0.1:6379/1'
+# Cache configuration (environment-driven)
+_raw_redis_url = os.getenv('CACHE_URL') or os.getenv('REDIS_URL') or 'redis://127.0.0.1:6379/1'
+# If Render accidentally has "${REDIS_URL}" as string, fallback to default or log warning
+if _raw_redis_url.startswith('${'):
+    _raw_redis_url = 'redis://127.0.0.1:6379/1'
+
+REDIS_URL = _raw_redis_url
 CACHE_KEY_PREFIX = os.getenv('CACHE_KEY_PREFIX', 'hospital_mgmt')
 CACHE_SERIALIZER = os.getenv('CACHE_SERIALIZER', 'json').lower()
 if CACHE_SERIALIZER == 'pickle':
