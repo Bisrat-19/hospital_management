@@ -167,19 +167,18 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
 }
 
-# Cache configuration (environment-driven)
-_raw_redis_url = os.getenv('CACHE_URL') or os.getenv('REDIS_URL') or 'redis://127.0.0.1:6379/1'
-# If Render accidentally has "${REDIS_URL}" as string, fallback to default or log warning
-if _raw_redis_url.startswith('${'):
-    _raw_redis_url = 'redis://127.0.0.1:6379/1'
+# Cache configuration (Upstash Redis)
+REDIS_URL = os.getenv('REDIS_URL')
+if not REDIS_URL:
+    raise ValueError("REDIS_URL not set in environment variables!")
 
-REDIS_URL = _raw_redis_url
 CACHE_KEY_PREFIX = os.getenv('CACHE_KEY_PREFIX', 'hospital_mgmt')
 CACHE_SERIALIZER = os.getenv('CACHE_SERIALIZER', 'json').lower()
-if CACHE_SERIALIZER == 'pickle':
-    _serializer_path = 'django_redis.serializers.pickle.PickleSerializer'
-else:
-    _serializer_path = 'django_redis.serializers.json.JSONSerializer'
+_serializer_path = (
+    'django_redis.serializers.pickle.PickleSerializer' 
+    if CACHE_SERIALIZER == 'pickle' 
+    else 'django_redis.serializers.json.JSONSerializer'
+)
 
 CACHES = {
     "default": {
@@ -188,6 +187,7 @@ CACHES = {
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
             "SERIALIZER": _serializer_path,
+            "SSL_CERT_REQS": None,  # Required for some Upstash configurations
         },
         "KEY_PREFIX": CACHE_KEY_PREFIX,
     }
