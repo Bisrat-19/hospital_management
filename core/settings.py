@@ -18,12 +18,14 @@ if not SECRET_KEY:
 
 DEBUG = os.getenv('DJANGO_DEBUG', 'true').lower() == 'true'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    'hospital-management-3f7p.onrender.com',
+]
 _allowed_hosts_env = os.getenv('DJANGO_ALLOWED_HOSTS', '')
 if _allowed_hosts_env:
-    ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_env.split(',') if h.strip()]
-else:
-    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+    ALLOWED_HOSTS.extend([h.strip() for h in _allowed_hosts_env.split(',') if h.strip()])
 
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = [
@@ -34,6 +36,7 @@ CORS_ALLOWED_ORIGINS = [
 
 CSRF_TRUSTED_ORIGINS = [
     "https://heal-point-ten.vercel.app",
+    "https://hospital-management-3f7p.onrender.com",
 ]
 
 PAYMENT_RETURN_URL = os.getenv('PAYMENT_RETURN_URL')
