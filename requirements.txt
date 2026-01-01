@@ -10,3 +10,6 @@ python-decouple==3.8
 python-dotenv==1.2.1
 redis==7.0.1
 django-cors-headers
+requests
+whitenoise
+dj-database-url
