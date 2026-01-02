@@ -16,7 +16,7 @@ CACHE_TTL = getattr(settings, 'CACHE_TTL', 300)
 logger = logging.getLogger(__name__)
 
 class AppointmentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.ModelViewSet):
-    queryset = Appointment.objects.all().order_by('-appointment_date')
+    queryset = Appointment.objects.all().select_related('patient', 'doctor').order_by('-appointment_date')
     serializer_class = AppointmentSerializer
     cache_key_prefix = "appointment"
 

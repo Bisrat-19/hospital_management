@@ -30,7 +30,12 @@ class PaymentViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.ModelV
         return PaymentSerializer
 
     def get_cache_keys_to_invalidate(self, instance):
-        return ["all_payments", f"payment_{instance.id}"]
+        return [
+            "all_payments", 
+            f"payment_{instance.id}",
+            "payment_total_amount",
+            "payment_today_total"
+        ]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data, context={"request": request})

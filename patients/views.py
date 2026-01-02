@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class PatientViewSet(CacheResponseMixin, CacheInvalidationMixin, viewsets.ModelViewSet):
-    queryset = Patient.objects.all().order_by('-created_at')
+    queryset = Patient.objects.all().select_related('assigned_doctor').order_by('-created_at')
     serializer_class = PatientSerializer
     cache_key_prefix = "patient"
 
