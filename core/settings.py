@@ -188,6 +188,7 @@ CACHES = {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
             "SERIALIZER": _serializer_path,
             "SSL_CERT_REQS": None,  # Required for some Upstash configurations
+            "IGNORE_EXCEPTIONS": True,
         },
         "KEY_PREFIX": CACHE_KEY_PREFIX,
     }
